@@ -136,6 +136,15 @@ function eventUrl(id) {
   return GATE_PAGE + "?eventId=" + encodeURIComponent(id) + "&outcome=Down";
 }
 
+// Jina 文本模式会返回 "Final URL: `...eventId=xxx...`"，用它校验是不是当前期
+function parseEventIdFromText(text) {
+  if (!text) return null;
+  let m = text.match(/Final URL:\s*`[^`]*eventId=(\d+)/i);
+  if (!m) m = text.match(/URL Source:\s*`[^`]*eventId=(\d+)/i);
+  if (!m) m = text.match(/eventId=(\d+)/);
+  return m ? m[1] : null;
+}
+
 exports.handler = async () => {
   const now = Math.floor(Date.now() / 1000);
   const curStart = now - (now % 300);
@@ -160,46 +169,59 @@ exports.handler = async () => {
     debug.directError = String(e);
   }
 
-  // 2) Jina 事件列表 + 指定事件页
+  // 2) Jina 事件列表（文本模式）
+  let listEvent = null;
   try {
-    const lr = await jinaText(GATE_API, deadline, 8000);
+    const lr = await jinaText(GATE_API, deadline, 10000);
     debug.jinaList = { ok: lr.ok, status: lr.status, type: lr.type, text: snip(lr.text), error: lr.error };
-    const ev = lr.ok ? pickEvent(parseJsonLoose(lr.text), now) : null;
-    debug.jinaEvent = ev;
-    if (ev) {
-      const url = eventUrl(ev.id);
-      const hr = await jinaHtml(url, deadline, 9000);
-      debug.jinaDetailHtml = { ok: hr.ok, status: hr.status, type: hr.type, text: snip(hr.text), error: hr.error };
-      let price = hr.ok ? parsePrice(hr.text) : null;
-      if (!price) {
-        const tr = await jinaText(url, deadline, 9000);
-        debug.jinaDetailText = { ok: tr.ok, status: tr.status, type: tr.type, text: snip(tr.text), error: tr.error };
-        price = tr.ok ? parsePrice(tr.text) : null;
-      }
-      if (price) return out(200, { price, start: ev.start, end: ev.end, source: "jina" });
-    }
+    listEvent = lr.ok ? pickEvent(parseJsonLoose(lr.text), now) : null;
+    debug.jinaEvent = listEvent;
   } catch (e) {
     debug.jinaError = String(e);
   }
 
-  // 3) Jina 通用事件页兜底：必须校验期次时间，避免拿错期
+  if (!listEvent) {
+    return out(502, { error: "target unavailable", debug });
+  }
+
+  // 3) Jina 通用事件页文本：会自动跳到当前期，用 Final URL 的 eventId 校验
   try {
-    const gr = await jinaHtml(GATE_PAGE, deadline, 9000);
-    debug.jinaGenericHtml = { ok: gr.ok, status: gr.status, type: gr.type, text: snip(gr.text), error: gr.error };
-    let price = gr.ok ? parsePrice(gr.text) : null;
-    let qEnd = gr.ok ? parseQuestionEnd(gr.text) : null;
-    if (!price || !qEnd) {
-      const tr = await jinaText(GATE_PAGE, deadline, 9000);
-      debug.jinaGenericText = { ok: tr.ok, status: tr.status, type: tr.type, text: snip(tr.text), error: tr.error };
-      if (!price) price = tr.ok ? parsePrice(tr.text) : null;
-      if (!qEnd) qEnd = tr.ok ? parseQuestionEnd(tr.text) : null;
-    }
-    debug.jinaGenericParse = { price, qEnd, expected };
-    if (price && qEnd === expected) {
-      return out(200, { price, start: curStart, end: curEnd, source: "jina-generic" });
+    const gr = await jinaText(GATE_PAGE, deadline, 12000);
+    debug.jinaGenericText = { ok: gr.ok, status: gr.status, type: gr.type, text: snip(gr.text), error: gr.error };
+    const price = gr.ok ? parsePrice(gr.text) : null;
+    const idFromText = gr.ok ? parseEventIdFromText(gr.text) : null;
+    const qEnd = gr.ok ? parseQuestionEnd(gr.text) : null;
+    debug.jinaGenericParse = {
+      price,
+      idFromText,
+      qEnd,
+      expected,
+      expectedId: listEvent.id
+    };
+    if (price && idFromText === listEvent.id) {
+      return out(200, {
+        price,
+        start: listEvent.start,
+        end: listEvent.end,
+        source: "jina-generic"
+      });
     }
   } catch (e) {
     debug.jinaGenericError = String(e);
+  }
+
+  // 4) 再试指定事件页文本
+  try {
+    const tr = await jinaText(eventUrl(listEvent.id), deadline, 12000);
+    debug.jinaDetailText = { ok: tr.ok, status: tr.status, type: tr.type, text: snip(tr.text), error: tr.error };
+    const price = tr.ok ? parsePrice(tr.text) : null;
+    const idFromText = tr.ok ? parseEventIdFromText(tr.text) : null;
+    debug.jinaDetailParse = { price, idFromText };
+    if (price) {
+      return out(200, { price, start: listEvent.start, end: listEvent.end, source: "jina" });
+    }
+  } catch (e) {
+    debug.jinaDetailError = String(e);
   }
 
   return out(502, { error: "target unavailable", debug });
