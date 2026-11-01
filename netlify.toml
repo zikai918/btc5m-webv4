@@ -1,0 +1,11 @@
+[build]
+  publish = "public"
+  functions = "netlify/functions"
+
+[[redirects]]
+  from = "/api/target"
+  to = "/.netlify/functions/target"
+  status = 200
+
+[functions."*"]
+  timeout = 26

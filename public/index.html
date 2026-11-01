@@ -1,0 +1,2405 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b0e11">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="BTC 5m 信号">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<title>BTC 5分钟方向提示器</title>
+<style>
+  :root{
+    --bg:#0b0e11; --panel:#14181f; --panel2:#191f28; --line:#242c37;
+    --txt:#e9ecf1; --muted:#7f8a99; --dim:#5a6472;
+    --green:#0ecb81; --red:#f6465d; --gold:#f0b90b; --blue:#4a86ff;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%}
+  body{
+    background:radial-gradient(1200px 600px at 50% -100px,#151b24 0%,var(--bg) 60%) no-repeat,var(--bg);
+    color:var(--txt);
+    font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+    font-size:14px; line-height:1.45;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1180px;margin:0 auto;padding:22px 22px 48px}
+
+  /* ---------- top bar ---------- */
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px}
+  .brand{display:flex;align-items:center;gap:11px;min-width:0}
+  .logo{
+    width:38px;height:38px;border-radius:11px;flex:none;
+    background:linear-gradient(135deg,#f0b90b,#f7931a 55%,#c47f00);
+    display:grid;place-items:center;font-weight:800;font-size:18px;color:#231a00;
+    box-shadow:0 6px 18px rgba(240,185,11,.22);
+  }
+  .brand h1{font-size:16px;font-weight:650;letter-spacing:.2px;white-space:nowrap}
+  .brand p{font-size:12px;color:var(--muted);margin-top:1px;white-space:nowrap}
+  .conn{
+    display:flex;align-items:center;gap:8px;padding:7px 13px;border-radius:999px;
+    background:rgba(255,255,255,.035);border:1px solid var(--line);
+    font-size:12px;color:var(--muted);white-space:nowrap;
+  }
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--dim);flex:none;transition:.2s}
+  .dot.on{background:var(--green);box-shadow:0 0 0 4px rgba(14,203,129,.16);animation:pulse 2s infinite}
+  .dot.warn{background:var(--gold);box-shadow:0 0 0 4px rgba(240,185,11,.14)}
+  .dot.bad{background:var(--red);box-shadow:0 0 0 4px rgba(246,70,93,.14)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.45}}
+
+  /* ---------- layout ---------- */
+  .grid{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);gap:16px}
+  .col{display:flex;flex-direction:column;gap:16px;min-width:0}
+  .card{
+    background:linear-gradient(180deg,rgba(255,255,255,.028),rgba(255,255,255,0)) ,var(--panel);
+    border:1px solid var(--line);border-radius:16px;padding:18px;
+  }
+  .card-title{
+    display:flex;align-items:center;justify-content:space-between;gap:10px;
+    font-size:12px;color:var(--muted);letter-spacing:.6px;text-transform:uppercase;
+    margin-bottom:14px;
+  }
+
+  /* ---------- signal ---------- */
+  .signal{position:relative;overflow:hidden;padding:20px}
+  .signal::after{
+    content:"";position:absolute;inset:auto -40% -70% auto;width:320px;height:320px;border-radius:50%;
+    background:radial-gradient(circle,rgba(240,185,11,.10),transparent 65%);pointer-events:none;
+  }
+  .sig-top{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+  .sym{font-size:13px;color:var(--muted)}
+  .sym b{color:var(--txt);font-weight:600}
+  .pill{
+    display:inline-block;margin-left:6px;padding:1px 7px;border-radius:5px;font-size:11px;
+    background:rgba(74,134,255,.15);color:#8fb4ff;border:1px solid rgba(74,134,255,.3);
+  }
+  .price{font-size:32px;font-weight:700;letter-spacing:-.5px;font-variant-numeric:tabular-nums;margin:6px 0 2px}
+  .chg{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .chg.up{color:var(--red)} .chg.down{color:var(--green)}
+
+  .dir-row{display:flex;align-items:center;gap:14px;margin:18px 0 12px}
+  .dir-icon{
+    width:64px;height:64px;border-radius:18px;flex:none;display:grid;place-items:center;
+    font-size:30px;font-weight:700;line-height:1;
+    transition:.25s;
+  }
+  .dir-label{font-size:26px;font-weight:700;letter-spacing:.5px}
+  .dir-sub{font-size:12px;color:var(--muted);margin-top:2px}
+  .score-num{margin-left:auto;font-size:30px;font-weight:700;font-variant-numeric:tabular-nums}
+
+  .signal.long .dir-icon{background:rgba(246,70,93,.13);color:var(--red);box-shadow:inset 0 0 0 1px rgba(246,70,93,.3)}
+  .signal.short .dir-icon{background:rgba(14,203,129,.13);color:var(--green);box-shadow:inset 0 0 0 1px rgba(14,203,129,.3)}
+  .signal.neutral .dir-icon{background:rgba(127,138,153,.12);color:var(--muted);box-shadow:inset 0 0 0 1px rgba(127,138,153,.25)}
+  .signal.long .dir-label,.signal.long .score-num{color:var(--red)}
+  .signal.short .dir-label,.signal.short .score-num{color:var(--green)}
+  .signal.neutral .dir-label,.signal.neutral .score-num{color:var(--muted)}
+
+  .meter{position:relative;height:8px;border-radius:99px;background:rgba(255,255,255,.06);overflow:hidden}
+  .meter .zero{position:absolute;left:50%;top:0;bottom:0;width:1px;background:rgba(255,255,255,.18)}
+  .meter i{position:absolute;top:0;bottom:0;border-radius:99px;transition:left .3s,width .3s}
+  .meter-scale{display:flex;justify-content:space-between;font-size:10px;color:var(--dim);margin-top:5px;font-variant-numeric:tabular-nums}
+
+  .meta-row{display:flex;flex-wrap:wrap;gap:8px 18px;margin-top:14px;font-size:12px;color:var(--muted)}
+  .meta-row b{color:#c2cad6;font-weight:600;font-variant-numeric:tabular-nums}
+  .cd{
+    margin-top:16px;display:flex;align-items:center;justify-content:space-between;gap:10px;
+    padding:11px 13px;border-radius:11px;background:rgba(255,255,255,.035);border:1px solid var(--line);
+    font-size:12.5px;color:var(--muted);
+  }
+  .cd b{color:var(--txt);font-size:15px;font-variant-numeric:tabular-nums;letter-spacing:.5px}
+  .preview{margin-top:9px;font-size:12px;color:var(--dim);display:flex;align-items:center;gap:7px}
+  .preview b{font-weight:600}
+  .preview .tag{
+    font-size:10px;padding:1px 6px;border-radius:4px;background:rgba(255,255,255,.06);
+    color:var(--muted);border:1px solid var(--line);
+  }
+
+  /* ---------- stats ---------- */
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border-radius:16px;overflow:hidden;border:1px solid var(--line)}
+  .stat{background:var(--panel);padding:15px 14px;min-width:0}
+  .stat .k{font-size:11.5px;color:var(--muted);white-space:nowrap}
+  .stat .v{font-size:24px;font-weight:700;margin:5px 0 2px;font-variant-numeric:tabular-nums;letter-spacing:-.3px}
+  .stat .s{font-size:11px;color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .v.pos{color:var(--red)} .v.neg{color:var(--green)}
+
+  /* ---------- factors ---------- */
+  .factors{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .factor{
+    background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:11px 12px;min-width:0;
+  }
+  .f-head{display:flex;align-items:center;justify-content:space-between;gap:6px}
+  .f-name{font-size:12px;color:#cfd6e0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .f-score{font-size:12px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .f-score.pos{color:var(--red)} .f-score.neg{color:var(--green)} .f-score.zero{color:var(--muted)}
+  .f-val{font-size:10.5px;color:var(--dim);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+  .f-bar{position:relative;height:4px;border-radius:99px;background:rgba(255,255,255,.06);margin-top:7px;overflow:hidden}
+  .f-bar .mid{position:absolute;left:50%;top:0;bottom:0;width:1px;background:rgba(255,255,255,.16)}
+  .f-bar i{position:absolute;top:0;bottom:0;border-radius:99px;transition:left .3s,width .3s}
+
+  /* ---------- chart ---------- */
+  .chart-wrap{position:relative}
+  #chart{width:100%;height:268px;display:block}
+  .legend{display:flex;gap:14px;font-size:11px;color:var(--muted);align-items:center}
+  .legend span{display:flex;align-items:center;gap:5px}
+  .legend i{display:inline-block;width:14px;height:2px;border-radius:2px}
+
+  /* ---------- table ---------- */
+  table{width:100%;border-collapse:collapse;font-size:12px;font-variant-numeric:tabular-nums}
+  th{font-weight:500;color:var(--dim);text-align:right;padding:0 8px 9px;font-size:11px;letter-spacing:.3px}
+  th:first-child,td:first-child{text-align:left}
+  td{padding:8px;border-top:1px solid rgba(255,255,255,.05);text-align:right;color:#c9d1dc}
+  .tag-dir{padding:1px 7px;border-radius:5px;font-size:11px;font-weight:600;white-space:nowrap}
+  .tag-dir.long{background:rgba(246,70,93,.12);color:var(--red)}
+  .tag-dir.short{background:rgba(14,203,129,.12);color:var(--green)}
+  .tag-dir.neutral{background:rgba(127,138,153,.12);color:var(--muted)}
+  .res-win{color:var(--green);font-weight:600}
+  .res-lose{color:var(--red);font-weight:600}
+  .res-none{color:var(--dim)}
+  .empty{padding:26px 8px;text-align:center;color:var(--dim);font-size:12px}
+
+  /* ---------- 5分钟涨跌条带 ---------- */
+  .strip{padding:12px 14px}
+  .strip-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;font-size:11px;color:var(--dim);margin-bottom:9px;letter-spacing:.3px}
+  .strip-head b{color:var(--muted);font-weight:500;font-variant-numeric:tabular-nums}
+  .strip-grid{display:flex;flex-wrap:wrap;gap:6px}
+  .strip-grid i{width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;font-style:normal;line-height:1}
+  .eval-line{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:11px;color:var(--dim);margin-top:8px;font-variant-numeric:tabular-nums}
+  .eval-btns{display:flex;gap:6px;flex-shrink:0}
+  .eval-btns button{
+    font-family:inherit;font-size:11px;line-height:1;padding:5px 9px;border-radius:6px;cursor:pointer;
+    background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.14);color:var(--muted);
+  }
+  .eval-btns button.on{background:rgba(240,185,11,.14);border-color:rgba(240,185,11,.5);color:#f0c040;font-weight:600}
+
+  /* ---------- banner ---------- */
+  .banner{
+    display:none;margin-bottom:16px;padding:12px 14px;border-radius:12px;font-size:12.5px;line-height:1.6;
+    background:rgba(240,185,11,.07);border:1px solid rgba(240,185,11,.28);color:#e8c862;
+  }
+  .banner.show{display:block}
+  .banner b{color:#f6d67a}
+  .banner code{background:rgba(0,0,0,.35);padding:1px 5px;border-radius:4px;color:#f0d080}
+
+  .foot{margin-top:22px;font-size:11px;color:var(--dim);line-height:1.7;text-align:center}
+  .foot a{color:#7e93b8;text-decoration:none}
+
+  @media (max-width:980px){
+    .grid{grid-template-columns:1fr}
+    .price{font-size:28px}
+  }
+  @media (max-width:560px){
+    .wrap{padding:16px 14px 36px}
+    .stats{grid-template-columns:1fr 1fr}
+    .factors{grid-template-columns:1fr}
+    .dir-label{font-size:22px}
+    .dir-icon{width:54px;height:54px;font-size:26px}
+    .card{padding:14px;border-radius:14px}
+    .eval-line{flex-wrap:wrap;row-gap:6px}
+    .eval-btns button{padding:5px 7px}
+    .signal{padding:16px}
+    .price{font-size:26px}
+    .brand h1{font-size:15px}
+    .brand p{font-size:11px}
+    .conn{padding:8px 9px;font-size:11px}
+    .foot{font-size:10px}
+  }
+
+  /* ---------- iPhone 全面屏 / PWA 安全区 ---------- */
+  html,body{overscroll-behavior:none;-webkit-tap-highlight-color:transparent}
+  .wrap{
+    padding-top:max(14px, env(safe-area-inset-top));
+    padding-left:max(14px, env(safe-area-inset-left));
+    padding-right:max(14px, env(safe-area-inset-right));
+    padding-bottom:max(26px, env(safe-area-inset-bottom));
+  }
+  @media (min-width:561px){
+    .wrap{
+      padding-top:max(22px, env(safe-area-inset-top));
+      padding-left:max(22px, env(safe-area-inset-left));
+      padding-right:max(22px, env(safe-area-inset-right));
+      padding-bottom:max(48px, env(safe-area-inset-bottom));
+    }
+  }
+
+  /* ---------- V4：版本号 / 设置入口 ---------- */
+  .ver{
+    font-size:10px;font-weight:600;padding:1px 5px;border-radius:4px;vertical-align:2px;margin-left:4px;
+    background:rgba(240,185,11,.14);color:#f0c040;border:1px solid rgba(240,185,11,.35);
+  }
+  .top-right{display:flex;align-items:center;gap:8px;flex:none}
+  .gear{
+    width:34px;height:34px;flex:none;border-radius:10px;cursor:pointer;display:grid;place-items:center;
+    background:rgba(255,255,255,.04);border:1px solid var(--line);color:var(--muted);
+    font-family:inherit;font-size:15px;line-height:1;transition:.2s;
+  }
+  .gear:hover{color:var(--txt);border-color:#3a4553}
+
+  /* ---------- V4：收益曲线 ---------- */
+  #equity{width:100%;height:112px;display:block}
+
+  /* ---------- V4：设置弹窗 ---------- */
+  .modal{
+    position:fixed;inset:0;z-index:50;display:none;align-items:flex-end;justify-content:center;
+    background:rgba(0,0,0,.62);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);
+  }
+  .modal.on{display:flex}
+  .sheet{
+    width:100%;max-width:520px;max-height:88vh;overflow:auto;
+    background:var(--panel);border:1px solid var(--line);border-radius:18px 18px 0 0;
+    padding:20px 20px calc(24px + env(safe-area-inset-bottom));
+    animation:sheetIn .22s ease-out;
+  }
+  @keyframes sheetIn{from{transform:translateY(24px);opacity:.4}to{transform:none;opacity:1}}
+  @media (min-width:640px){
+    .modal{align-items:center;padding:24px}
+    .sheet{border-radius:18px;max-height:84vh}
+  }
+  .sheet-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px}
+  .sheet-head b{font-size:16px}
+  .sheet-head p{font-size:11.5px;color:var(--dim);margin-top:3px}
+  .done{
+    flex:none;font-family:inherit;font-size:12px;padding:7px 14px;border-radius:8px;cursor:pointer;
+    background:rgba(240,185,11,.14);border:1px solid rgba(240,185,11,.45);color:#f0c040;font-weight:600;
+  }
+  .field{padding:13px 0;border-top:1px solid rgba(255,255,255,.06)}
+  .field.sub{padding:10px 0 10px 12px;border-top:none;border-left:2px solid rgba(255,255,255,.05);margin-left:2px}
+  .field-top{display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:13px;color:#dbe2ec}
+  .field-top b{font-size:13px;color:var(--gold);font-variant-numeric:tabular-nums}
+  .field-hint{font-size:11px;color:var(--dim);line-height:1.55;margin-top:5px}
+  input[type=range]{
+    -webkit-appearance:none;appearance:none;width:100%;height:4px;border-radius:99px;margin:13px 0 4px;
+    background:linear-gradient(90deg,rgba(240,185,11,.7),rgba(255,255,255,.12));outline:none;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none;appearance:none;width:18px;height:18px;border-radius:50%;
+    background:#f0b90b;border:2px solid #14181f;box-shadow:0 0 0 4px rgba(240,185,11,.18);cursor:pointer;
+  }
+  input[type=range]::-moz-range-thumb{
+    width:16px;height:16px;border-radius:50%;background:#f0b90b;border:2px solid #14181f;cursor:pointer;
+  }
+  .switch{position:relative;display:inline-block;width:42px;height:24px;flex:none;cursor:pointer}
+  .switch input{position:absolute;opacity:0;width:0;height:0}
+  .switch i{position:absolute;inset:0;border-radius:99px;background:rgba(255,255,255,.12);transition:.2s}
+  .switch i::after{content:"";position:absolute;width:18px;height:18px;border-radius:50%;background:#fff;top:3px;left:3px;transition:.2s}
+  .switch input:checked + i{background:rgba(240,185,11,.75)}
+  .switch input:checked + i::after{transform:translateX(18px)}
+  .danger{
+    width:100%;margin-top:10px;font-family:inherit;font-size:12px;padding:9px 12px;border-radius:9px;cursor:pointer;
+    background:rgba(246,70,93,.08);border:1px solid rgba(246,70,93,.35);color:#ff9aa8;
+  }
+  .danger:hover{background:rgba(246,70,93,.14)}
+
+  /* ---------- V4：强信号浮层 ---------- */
+  .toast{
+    position:fixed;left:50%;bottom:calc(24px + env(safe-area-inset-bottom));z-index:60;
+    transform:translate(-50%,18px);opacity:0;pointer-events:none;transition:.24s;
+    max-width:calc(100vw - 36px);padding:11px 16px;border-radius:12px;font-size:13px;color:var(--txt);
+    background:#1b222c;border:1px solid var(--line);box-shadow:0 14px 38px rgba(0,0,0,.5);
+  }
+  .toast.show{opacity:1;transform:translate(-50%,0)}
+  .toast.long{color:#ffb3bd;border-color:rgba(246,70,93,.5)}
+  .toast.short{color:#9fe8c9;border-color:rgba(14,203,129,.5)}
+
+  /* ---------- V4：目标价差 ---------- */
+  .target-card{padding:18px}
+  .target-card .card-title span:last-child{text-transform:none;letter-spacing:0}
+  .tgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .tcell{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:10px 12px;min-width:0}
+  .tcell .k{font-size:11px;color:var(--muted)}
+  .tcell .v{font-size:20px;font-weight:700;margin-top:3px;font-variant-numeric:tabular-nums;letter-spacing:-.3px}
+  .tcell .s{font-size:10.5px;color:var(--dim);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tbig{
+    margin-top:10px;padding:12px 14px;border-radius:12px;border:1px solid var(--line);
+    background:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,0));
+  }
+  .tbig .k{font-size:11px;color:var(--muted)}
+  .tbig .v{font-size:30px;font-weight:700;margin-top:2px;font-variant-numeric:tabular-nums;letter-spacing:-.6px}
+  .trow3{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;margin-top:10px;background:var(--line);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  .trow3 div{background:var(--panel2);padding:8px 10px;min-width:0}
+  .trow3 span{display:block;font-size:10.5px;color:var(--dim);white-space:nowrap}
+  .trow3 b{display:block;font-size:13.5px;font-weight:600;margin-top:2px;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tverdict{display:flex;align-items:center;gap:10px;margin-top:11px;padding:10px 13px;border-radius:11px;border:1px solid var(--line);background:rgba(255,255,255,.03)}
+  .tverdict .tlabel{font-size:16px;font-weight:700}
+  .tverdict .tsub{font-size:11px;color:var(--dim);margin-left:auto;text-align:right}
+  .tverdict.long{border-color:rgba(246,70,93,.4);background:rgba(246,70,93,.08)}
+  .tverdict.long .tlabel{color:var(--red)}
+  .tverdict.short{border-color:rgba(14,203,129,.4);background:rgba(14,203,129,.08)}
+  .tverdict.short .tlabel{color:var(--green)}
+  .tverdict.neutral .tlabel{color:var(--muted)}
+  .tactions{display:flex;align-items:center;gap:7px;margin-top:11px}
+  .tactions input{
+    flex:1;min-width:0;font-family:inherit;font-size:12px;padding:8px 10px;border-radius:8px;
+    background:rgba(255,255,255,.04);border:1px solid var(--line);color:var(--txt);outline:none;
+  }
+  .tactions input:focus{border-color:rgba(240,185,11,.5)}
+  .tactions button{
+    flex:none;font-family:inherit;font-size:12px;padding:8px 12px;border-radius:8px;cursor:pointer;
+    background:rgba(240,185,11,.14);border:1px solid rgba(240,185,11,.45);color:#f0c040;font-weight:600;
+  }
+  .tactions a{flex:none;font-size:11px;color:#7e93b8;text-decoration:none;white-space:nowrap}
+  .tactions a:hover{text-decoration:underline}
+  .tup{color:var(--red)} .tdown{color:var(--green)}
+
+  /* V4：窄屏顶部只保留连接状态圆点，避免和设置按钮挤在一起 */
+  @media (max-width:560px){
+    #connText{display:none}
+    .top-right{gap:6px}
+    .gear{width:32px;height:32px}
+    .brand h1{font-size:14px}
+    .ver{display:none}
+  }
+</style>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('./sw.js').catch(function () {});
+  });
+}
+</script>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <div class="brand">
+      <div class="logo">₿</div>
+      <div>
+        <h1>BTC 5分钟方向提示器<span class="ver">V4</span></h1>
+        <p>Gate.io · BTC_USDT 永续 · 实时行情</p>
+      </div>
+    </div>
+    <div class="top-right">
+      <div class="conn">
+        <span class="dot" id="connDot"></span>
+        <span id="connText">正在初始化…</span>
+      </div>
+      <button type="button" class="gear" id="btnSettings" title="策略与提醒设置" aria-label="设置">⚙</button>
+    </div>
+  </div>
+
+  <div class="banner" id="banner"></div>
+
+  <div class="card strip">
+    <div class="strip-head">
+      <span>最近 18 个 5 分钟节点 · 涨跌</span>
+      <b id="stripRange">—</b>
+    </div>
+    <div class="strip-grid" id="stripGrid"></div>
+  </div>
+
+  <div class="grid">
+    <!-- 左列 -->
+    <div class="col">
+      <div class="card signal neutral" id="signalCard">
+        <div class="sig-top">
+          <div class="sym"><b>BTC_USDT</b><span class="pill">永续 · 5m</span></div>
+          <div class="sym" id="lastBarTime">—</div>
+        </div>
+        <div class="price" id="price">—</div>
+        <div class="chg" id="chg">等待行情…</div>
+
+        <div class="dir-row">
+          <div class="dir-icon" id="dirIcon">—</div>
+          <div>
+            <div class="dir-label" id="dirLabel">观望</div>
+            <div class="dir-sub" id="dirSub">正在计算方向…</div>
+          </div>
+          <div class="score-num" id="scoreNum">0</div>
+        </div>
+
+        <div class="eval-line">
+          <span id="evalInfo">每 30 秒评估一次 · 等待行情</span>
+          <span class="eval-btns">
+            <button type="button" id="btnEval10" data-sec="10">10 秒</button>
+            <button type="button" id="btnEval15" data-sec="15">15 秒</button>
+            <button type="button" class="on" id="btnEval30" data-sec="30">30 秒</button>
+            <button type="button" id="btnEval60" data-sec="60">60 秒</button>
+          </span>
+        </div>
+
+        <div class="meter">
+          <div class="zero"></div>
+          <i id="meterFill" style="left:50%;width:0"></i>
+        </div>
+        <div class="meter-scale"><span style="color:var(--red)">强烈做多 +100</span><span>0</span><span style="color:var(--green)">强烈做空 −100</span></div>
+
+        <div class="meta-row">
+          <span>锁定于 <b id="lockTime">—</b> 收盘</span>
+          <span>目标 <b id="targetTime">—</b></span>
+          <span>波动 ATR <b id="atrVal">—</b></span>
+          <span>方向阈值 <b id="thrMeta">±30</b></span>
+        </div>
+
+        <div class="cd">
+          <span>距本根 5m K线收盘</span>
+          <b id="countdown">--:--</b>
+        </div>
+
+        <div class="preview">
+          <span class="tag">实时预览</span>
+          <span>当前未收盘K线：<b id="previewText">—</b></span>
+        </div>
+      </div>
+
+      <!-- V4：Gate 事件目标价差 -->
+      <div class="card target-card" id="targetCard">
+        <div class="card-title">
+          <span>目标价差 · Gate 5m</span>
+          <span id="tStatus" style="color:var(--dim)">待同步</span>
+        </div>
+
+        <div class="tgrid">
+          <div class="tcell">
+            <div class="k">当前价格</div>
+            <div class="v" id="tCurrent">—</div>
+          </div>
+          <div class="tcell">
+            <div class="k">目标价格</div>
+            <div class="v" id="tTarget">—</div>
+            <div class="s" id="tPeriod">等待目标价</div>
+          </div>
+        </div>
+
+        <div class="tbig">
+          <div class="k">本期差额（当前价格 − 目标价格，÷2）</div>
+          <div class="v" id="tDiff">—</div>
+        </div>
+
+        <div class="trow3">
+          <div><span>上一期差额（÷2）</span><b id="tLast">—</b></div>
+          <div><span>近期平均（÷2）</span><b id="tAvg">—</b></div>
+          <div><span>修正差额</span><b id="tAdj">—</b></div>
+        </div>
+
+        <div class="tverdict neutral" id="tVerdict">
+          <span class="tlabel">观望</span>
+          <span class="tsub">等待目标价</span>
+        </div>
+
+        <div class="tactions">
+          <input id="tInput" type="number" step="0.01" inputmode="decimal" placeholder="手动填写目标价">
+          <button type="button" id="tSave">保存</button>
+          <a id="tOpen" href="https://www.gatewebsite.com/zh/trade-events/btc-updown-5m" target="_blank" rel="noopener">打开 Gate</a>
+        </div>
+      </div>
+
+      <div class="stats">
+        <div class="stat">
+          <div class="k">胜率</div>
+          <div class="v" id="winRate">—</div>
+          <div class="s" id="winRateSub">—</div>
+        </div>
+        <div class="stat">
+          <div class="k">已结算</div>
+          <div class="v" id="settled">0</div>
+          <div class="s" id="settledSub">赢 0 / 输 0</div>
+        </div>
+        <div class="stat">
+          <div class="k">当前连续</div>
+          <div class="v" id="streak">—</div>
+          <div class="s" id="streakSub">—</div>
+        </div>
+        <div class="stat">
+          <div class="k">累计方向收益</div>
+          <div class="v" id="cumRet">0.00%</div>
+          <div class="s">按方向持有 1 根，不含杠杆</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <span>近 18 期累计收益曲线</span>
+          <span id="eqInfo" style="color:var(--dim);text-transform:none;letter-spacing:0">—</span>
+        </div>
+        <canvas id="equity"></canvas>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <span>最近 60 根 5m K线</span>
+          <div class="legend">
+            <span><i style="background:#4a86ff"></i>EMA9</span>
+            <span><i style="background:#f0b90b"></i>EMA21</span>
+            <span><i style="background:#0ecb81"></i>涨</span>
+            <span><i style="background:#f6465d"></i>跌</span>
+          </div>
+        </div>
+        <div class="chart-wrap"><canvas id="chart"></canvas></div>
+      </div>
+    </div>
+
+    <!-- 右列 -->
+    <div class="col">
+      <div class="card">
+        <div class="card-title">
+          <span>多因子评分明细</span>
+          <span id="factorSum" style="color:var(--dim);text-transform:none;letter-spacing:0">权重合计 100%</span>
+        </div>
+        <div class="factors" id="factors"></div>
+      </div>
+
+      <div class="card" style="flex:1">
+        <div class="card-title">
+          <span>信号记录</span>
+          <span id="histCount" style="text-transform:none;letter-spacing:0;color:var(--dim)">—</span>
+        </div>
+        <table>
+          <thead>
+            <tr><th>收盘时间</th><th>方向</th><th>评分</th><th>结果</th><th>收益</th></tr>
+          </thead>
+          <tbody id="histBody">
+            <tr><td colspan="5" class="empty">等待第一根K线收盘…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    本工具仅提供基于公开行情的技术指标统计，不构成任何投资建议。加密资产波动极大，请自行控制风险。<br>
+    数据源：Gate.io 公共行情接口（WebSocket 实时推送 + REST 历史K线）· 全部计算在本机浏览器内完成，不上传任何数据。<br>
+    V4：设置与历史记录仅保存在本机浏览器 localStorage。
+  </div>
+</div>
+
+<div class="modal" id="settingsModal" aria-hidden="true">
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+    <div class="sheet-head">
+      <div>
+        <b id="sheetTitle">策略与提醒</b>
+        <p>修改后自动保存，下次打开仍然生效</p>
+      </div>
+      <button type="button" class="done" id="btnCloseSettings">完成</button>
+    </div>
+
+    <div class="field">
+      <div class="field-top"><span>方向阈值</span><b id="thrVal">±30</b></div>
+      <input type="range" id="thrRange" min="10" max="60" step="5" value="30">
+      <div class="field-hint">|多因子评分| 与 |目标价差修正值| 都按这个阈值判断，达到才给出做多 / 做空</div>
+    </div>
+
+    <div class="field">
+      <div class="field-top"><span>强信号提醒</span><label class="switch"><input type="checkbox" id="swAlert" checked><i></i></label></div>
+      <div class="field-hint">方向翻转、且评分达到阈值时弹出提醒</div>
+    </div>
+
+    <div class="field sub">
+      <div class="field-top"><span>提示音</span><label class="switch"><input type="checkbox" id="swSound" checked><i></i></label></div>
+    </div>
+
+    <div class="field sub">
+      <div class="field-top"><span>振动（手机）</span><label class="switch"><input type="checkbox" id="swVibrate" checked><i></i></label></div>
+    </div>
+
+    <div class="field sub">
+      <div class="field-top"><span>浏览器通知</span><label class="switch"><input type="checkbox" id="swNotify"><i></i></label></div>
+      <div class="field-hint" id="notifyHint">首次开启会请求授权；iOS 需先“添加到主屏幕”</div>
+    </div>
+
+    <div class="field">
+      <div class="field-top"><span>本地记录</span><span id="localHint" style="color:var(--dim);font-size:12px">—</span></div>
+      <button type="button" class="danger" id="btnClear">清空本地历史与统计</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+
+/* ============================================================
+   常量与状态
+   ============================================================ */
+const INST   = "BTC_USDT";
+const INTERVAL = "5m";
+const BAR_MS = 5 * 60 * 1000;
+const HIST_MAX = 18;          // 信号记录只保留最近 18 期
+const EVAL_SEC_DEFAULT = 30;  // 默认每 30 秒评估一次方向（页面可切到 10/15/60 秒）
+const IS_DEMO = /demo=1/.test(location.search);
+const REST_BASE = `https://api.gateio.ws/api/v4/futures/usdt/candlesticks?contract=${INST}&interval=${INTERVAL}`;
+const REST_URLS = [REST_BASE + "&limit=100"];
+const WS_URLS = [
+  "wss://fx-ws.gateio.ws/v4/ws/usdt"
+];
+
+/* ---------- V4：设置 + 本地记录 ---------- */
+const SETTINGS_KEY = "btc5m.v4.settings";
+const HISTORY_KEY = "btc5m.v4.history";
+const TARGET_KEY = "btc5m.v4.targets";
+const DIFF_KEY = "btc5m.v4.diffs";
+const DIFF_AVG_N = 12;        // 近期平均差额取最近 12 期
+const DEFAULT_SETTINGS = {
+  threshold: 30,   // 方向阈值：|评分| 达到该值才给出方向
+  evalSec: 30,     // 评估间隔
+  alert: true,     // 强信号提醒
+  sound: true,     // 提示音
+  vibrate: true,   // 振动
+  notify: false    // 浏览器通知
+};
+
+function readJSON(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : fallback;
+  } catch (e) { return fallback; }
+}
+
+const settings = Object.assign({}, DEFAULT_SETTINGS, readJSON(SETTINGS_KEY, {}));
+settings.threshold = Math.min(60, Math.max(10, Math.round(Number(settings.threshold) || 30)));
+settings.evalSec = [10, 15, 30, 60].indexOf(Number(settings.evalSec)) >= 0 ? Number(settings.evalSec) : 30;
+
+function saveSettings() {
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings)); } catch (e) {}
+}
+
+function saveHistory() {
+  if (state.demo) return;
+  try {
+    const rows = state.history.slice(0, HIST_MAX).map((h) => ({
+      ts: h.ts, dir: h.dir, score: h.score, win: h.win, ret: h.ret, replay: !!h.replay
+    }));
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(rows));
+  } catch (e) {}
+}
+
+function restoreHistory() {
+  if (state.demo) return;
+  const arr = readJSON(HISTORY_KEY, []);
+  if (!Array.isArray(arr)) return;
+  state.history = arr
+    .filter((h) => h && Number.isFinite(Number(h.ts)) && DIR_CN[h.dir])
+    .map((h) => ({
+      ts: Number(h.ts),
+      dir: h.dir,
+      score: Number(h.score) || 0,
+      win: !!h.win,
+      ret: Number(h.ret) || 0,
+      replay: !!h.replay
+    }))
+    .slice(0, HIST_MAX);
+  recalcStats();
+}
+
+/* ---------- V4：Gate 目标价 + 差额记录 ---------- */
+function saveTargets() {
+  if (state.demo) return;
+  try {
+    const cutoff = Date.now() - 24 * 3600 * 1000;
+    const obj = {};
+    for (const k in state.targets) {
+      const t = state.targets[k];
+      if (!t || !t.startTs || t.startTs < cutoff) continue;
+      obj[k] = t;
+    }
+    localStorage.setItem(TARGET_KEY, JSON.stringify(obj));
+  } catch (e) {}
+}
+
+function saveDiffs() {
+  if (state.demo) return;
+  try { localStorage.setItem(DIFF_KEY, JSON.stringify(state.diffs.slice(-36))); } catch (e) {}
+}
+
+function currentPeriodStart() {
+  if (state.live) return state.live.ts;
+  if (state.lastClosedTs) return state.lastClosedTs + BAR_MS;
+  return Math.floor(Date.now() / BAR_MS) * BAR_MS;
+}
+
+function targetForPeriod(startTs) {
+  if (!startTs) return null;
+  const t = state.targets[startTs];
+  if (t && isFinite(t.price)) return t;
+  if (state.target && state.target.startTs === startTs) return state.target;
+  return null;
+}
+
+function restoreTargetData() {
+  if (state.demo) return;
+  const obj = readJSON(TARGET_KEY, {});
+  if (obj && typeof obj === "object") {
+    for (const k in obj) {
+      const t = obj[k];
+      if (!t || !isFinite(Number(t.price)) || !isFinite(Number(t.startTs))) continue;
+      state.targets[k] = {
+        startTs: Number(t.startTs),
+        price: Number(t.price),
+        id: String(t.id || ""),
+        question: String(t.question || ""),
+        source: t.source === "manual" ? "manual" : "gate",
+        updatedAt: Number(t.updatedAt) || 0
+      };
+    }
+  }
+  const arr = readJSON(DIFF_KEY, []);
+  if (Array.isArray(arr)) {
+    state.diffs = arr
+      .filter((d) => d && isFinite(Number(d.startTs)) && isFinite(Number(d.diff)))
+      .map((d) => ({
+        startTs: Number(d.startTs),
+        target: Number(d.target) || 0,
+        close: Number(d.close) || 0,
+        diff: Number(d.diff)
+      }))
+      .sort((a, b) => a.startTs - b.startTs)
+      .slice(-36);
+  }
+  state.target = targetForPeriod(currentPeriodStart());
+}
+
+function diffAverage() {
+  const recent = state.diffs.slice(-DIFF_AVG_N);
+  if (!recent.length) return { avg: 0, count: 0, last: null };
+  let sum = 0;
+  for (const d of recent) sum += d.diff;
+  return {
+    avg: sum / recent.length,
+    count: recent.length,
+    last: state.diffs[state.diffs.length - 1] || null
+  };
+}
+
+function recordDiff(startTs, close) {
+  const t = state.targets[startTs];
+  if (!t || !isFinite(t.price) || !isFinite(close)) return;
+  const i = state.diffs.findIndex((d) => d.startTs === startTs);
+  const row = { startTs, target: t.price, close, diff: close - t.price };
+  if (i >= 0) state.diffs[i] = row;
+  else state.diffs.push(row);
+  state.diffs.sort((a, b) => a.startTs - b.startTs);
+  if (state.diffs.length > 36) state.diffs = state.diffs.slice(-36);
+  saveDiffs();
+}
+
+function applyTarget(startTs, price, meta) {
+  const p = Number(price);
+  if (!isFinite(p) || p <= 0 || !startTs) return false;
+  const row = {
+    startTs: Number(startTs),
+    price: p,
+    id: String((meta && meta.id) || ""),
+    question: String((meta && meta.question) || ""),
+    source: (meta && meta.source) === "manual" ? "manual" : "gate",
+    updatedAt: Date.now()
+  };
+  state.targets[row.startTs] = row;
+  if (row.startTs === currentPeriodStart() || !state.target) state.target = row;
+
+  // 目标价晚到时，补记已经收盘那一期的差额
+  const closed = state.kl.find((k) => k.ts === row.startTs);
+  if (closed) recordDiff(row.startTs, closed.c);
+
+  saveTargets();
+  renderTargetCard();
+  return true;
+}
+
+/* ---------- V4：网页版自动同步（Netlify Function / Jina 兜底） ---------- */
+const AUTO_SYNC_MS = 30000;
+const GATE_LIST_URL = "https://www.gatewebsite.com/apiw/v2/market_futures/contract_events/list?version=20260918&market_type=all&sub_website_id=0";
+const GATE_EVENT_BASE = "https://www.gatewebsite.com/zh/trade-events/btc-updown-5m";
+let autoSyncBusy = false;
+let autoSyncAt = 0;
+let autoSyncFails = 0;
+let autoSyncJinaAt = 0;
+
+function isDesktopShell() {
+  return !!(window.chrome && window.chrome.webview);
+}
+
+async function fetchJina(url, timeoutMs, headers) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs || 15000);
+  const bust = (url.indexOf("?") >= 0 ? "&" : "?") + "_ts=" + Date.now();
+  try {
+    const res = await fetch("https://r.jina.ai/" + url + bust, {
+      cache: "no-store",
+      signal: ctrl.signal,
+      headers: headers || {}
+    });
+    if (!res.ok) return "";
+    return await res.text();
+  } catch (e) {
+    return "";
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function fetchJinaText(url, timeoutMs) {
+  return fetchJina(url, timeoutMs, { "X-No-Cache": "true" });
+}
+
+function fetchJinaHtml(url, timeoutMs) {
+  return fetchJina(url, timeoutMs, {
+    "Accept": "text/html",
+    "X-Return-Format": "html",
+    "X-No-Cache": "true"
+  });
+}
+
+function parseJsonLoose(text) {
+  if (!text) return null;
+  try { return JSON.parse(text); } catch (e) {}
+  const a = text.indexOf("{");
+  const b = text.lastIndexOf("}");
+  if (a >= 0 && b > a) {
+    try { return JSON.parse(text.slice(a, b + 1)); } catch (e) {}
+  }
+  return null;
+}
+
+function pickGateEvent(data, nowSec) {
+  const list = data && data.data && data.data.list;
+  if (!Array.isArray(list)) return null;
+  for (const e of list) {
+    if (e && e.slug === "btc-updown-5m" &&
+        Number(e.start_date) <= nowSec && Number(e.end_date) > nowSec) {
+      return { id: String(e.id), start: Number(e.start_date), end: Number(e.end_date) };
+    }
+  }
+  return null;
+}
+
+function parseGatePrice(text) {
+  if (!text) return null;
+  let m = text.match(/price_to_beat\\?"\s*:\s*\\?"?([0-9.]+)/);
+  if (!m) m = text.match(/目标价格[^\d]{0,40}([0-9,]+\.\d+)/);
+  if (!m) m = text.match(/Target\s+([0-9,]+\.\d+)/i);
+  if (!m) return null;
+  const v = Number(m[1].replace(/,/g, ""));
+  return isFinite(v) && v > 0 ? v : null;
+}
+
+// 网页端兜底：Jina 读取事件列表 -> 当前 eventId -> 指定事件页目标价
+async function tryJinaTarget(startTs) {
+  try {
+    const nowSec = Math.floor(startTs / 1000);
+    const listText = await fetchJinaText(GATE_LIST_URL, 15000);
+    const data = parseJsonLoose(listText);
+    const ev = pickGateEvent(data, nowSec);
+
+    if (ev) {
+      const eventUrl = GATE_EVENT_BASE + "?eventId=" + encodeURIComponent(ev.id) + "&outcome=Down";
+      // 优先拿 HTML，精确解析 price_to_beat（与桌面端一致）
+      let text = await fetchJinaHtml(eventUrl, 15000);
+      let price = parseGatePrice(text);
+      if (!price) {
+        text = await fetchJinaText(eventUrl, 15000);
+        price = parseGatePrice(text);
+      }
+      if (price) {
+        return window.btc5mSetTarget({
+          price: price,
+          start: ev.start * 1000,
+          end: ev.end * 1000,
+          source: "jina"
+        });
+      }
+    }
+    // 拿不到当前期的精确目标价就不猜，避免用错期次的价格
+    return false;
+  } catch (e) {
+    return false;
+  }
+}
+
+async function autoSyncTarget() {
+  if (state.demo || isDesktopShell() || autoSyncBusy) return false;
+  const now = Date.now();
+  if (now - autoSyncAt < AUTO_SYNC_MS) return false;
+  autoSyncAt = now;
+
+  const start = currentPeriodStart();
+  const cur = targetForPeriod(start);
+  if (cur && cur.source === "gate" && cur.updatedAt >= start) return false;
+
+  autoSyncBusy = true;
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 28000);
+    let res;
+    try {
+      res = await fetch("./api/target?ts=" + Math.floor(now / 1000), {
+        cache: "no-store", signal: ctrl.signal
+      });
+    } finally { clearTimeout(timer); }
+
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const json = await res.json();
+    if (!json || !json.price) throw new Error("bad payload");
+    const ok = window.btc5mSetTarget(json);
+    if (!ok) throw new Error("apply failed");
+    autoSyncFails = 0;
+    return true;
+  } catch (e) {
+    autoSyncFails++;
+    // 没有 Netlify Function 时，尝试 Jina 阅读器兜底
+    if (autoSyncFails >= 1 && now - autoSyncJinaAt > 5 * 60 * 1000) {
+      autoSyncJinaAt = now;
+      if (await tryJinaTarget(start)) {
+        autoSyncFails = 0;
+        return true;
+      }
+    }
+    if (autoSyncFails >= 2 && !targetForPeriod(currentPeriodStart())) {
+      const el = $("tStatus");
+      if (el) {
+        el.textContent = "自动同步不可用 · 可手动填写";
+        el.style.color = "var(--gold)";
+      }
+    }
+    return false;
+  } finally {
+    autoSyncBusy = false;
+  }
+}
+
+// 桌面 WebView2 壳通过这个入口推送官方目标价
+window.btc5mSetTarget = function (payload) {
+  if (!payload) return false;
+  let end = Number(payload.end);
+  let start = Number(payload.start);
+  if (isFinite(end) && end > 0 && end < 1e12) end *= 1000;
+  if (isFinite(start) && start > 0 && start < 1e12) start *= 1000;
+  if (!start && end) start = end - BAR_MS;
+  if (!start) return false;
+  if (end && Date.now() > end + BAR_MS) return false;
+  return applyTarget(start, payload.price, {
+    id: payload.id,
+    question: payload.question,
+    source: payload.source || "gate"
+  });
+};
+
+const state = {
+  kl: [],            // 已收盘K线，旧 -> 新
+  live: null,        // 当前未收盘K线
+  signal: null,      // 已锁定方向（基于最后一根收盘K线）
+  advice: null,      // 每 10/15/30/60 秒评估出的实时方向
+  evalSec: settings.evalSec,
+  lastEvalAt: 0,
+  pending: null,     // 待结算信号
+  stats: { settled: 0, wins: 0, losses: 0, streak: 0, sumRet: 0, replay: 0 },
+  history: [],       // {ts, dir, score, win, ret, replay}
+  target: null,      // 当前期目标价 {startTs, price, id, question, source, updatedAt}
+  targets: {},       // startTs -> 目标价记录（按 5m 期缓存）
+  diffs: [],         // 已结算期差额 {startTs, target, close, diff}
+  conn: "init",
+  lastClosedTs: 0,
+  ws: null,
+  wsIdx: 0,
+  wsRetry: 0,
+  restRetry: 0,
+  lastRender: 0,
+  lastSyncAt: 0,
+  lastMsgAt: 0,      // 最近一次收到 WS 消息的时间（用于识别假在线）
+  demo: IS_DEMO
+};
+
+const $ = (id) => document.getElementById(id);
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+/* ============================================================
+   指标计算
+   ============================================================ */
+function emaArray(values, period) {
+  const out = new Array(values.length).fill(null);
+  if (values.length < period) return out;
+  const k = 2 / (period + 1);
+  let sum = 0;
+  for (let i = 0; i < period; i++) sum += values[i];
+  let e = sum / period;
+  out[period - 1] = e;
+  for (let i = period; i < values.length; i++) {
+    e = values[i] * k + e * (1 - k);
+    out[i] = e;
+  }
+  return out;
+}
+
+function lastEma(values, period) {
+  const a = emaArray(values, period);
+  return a[a.length - 1];
+}
+
+function rsiLast(closes, period = 14) {
+  if (closes.length < period + 1) return null;
+  let gain = 0, loss = 0;
+  for (let i = 1; i <= period; i++) {
+    const d = closes[i] - closes[i - 1];
+    if (d >= 0) gain += d; else loss -= d;
+  }
+  let ag = gain / period, al = loss / period;
+  for (let i = period + 1; i < closes.length; i++) {
+    const d = closes[i] - closes[i - 1];
+    const g = d > 0 ? d : 0;
+    const l = d < 0 ? -d : 0;
+    ag = (ag * (period - 1) + g) / period;
+    al = (al * (period - 1) + l) / period;
+  }
+  if (al === 0) return 100;
+  const rs = ag / al;
+  return 100 - 100 / (1 + rs);
+}
+
+function atrLast(kl, period = 14) {
+  if (kl.length < period + 1) return null;
+  const trs = [];
+  for (let i = 1; i < kl.length; i++) {
+    const h = kl[i].h, l = kl[i].l, pc = kl[i - 1].c;
+    trs.push(Math.max(h - l, Math.abs(h - pc), Math.abs(l - pc)));
+  }
+  let atr = trs.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  for (let i = period; i < trs.length; i++) atr = (atr * (period - 1) + trs[i]) / period;
+  return atr;
+}
+
+function macdLast(closes) {
+  if (closes.length < 35) return null;
+  const e12 = emaArray(closes, 12);
+  const e26 = emaArray(closes, 26);
+  const line = [];
+  for (let i = 0; i < closes.length; i++) {
+    line.push(e12[i] != null && e26[i] != null ? e12[i] - e26[i] : null);
+  }
+  const valid = line.filter((x) => x != null);
+  const sigArr = emaArray(valid, 9);
+  const histArr = [];
+  for (let i = 0; i < sigArr.length; i++) {
+    if (sigArr[i] != null) histArr.push(valid[i] - sigArr[i]);
+  }
+  if (!histArr.length) return null;
+  return {
+    line: valid[valid.length - 1],
+    signal: sigArr[sigArr.length - 1],
+    hist: histArr[histArr.length - 1],
+    prevHist: histArr.length > 1 ? histArr[histArr.length - 2] : null
+  };
+}
+
+/* ============================================================
+   多因子评分
+   ============================================================ */
+function computeSignal(kl) {
+  if (!kl || kl.length < 55) return null;
+  const closes = kl.map((k) => k.c);
+  const last = kl[kl.length - 1];
+  const price = last.c;
+
+  const ema9 = lastEma(closes, 9);
+  const ema21 = lastEma(closes, 21);
+  if (ema9 == null || ema21 == null) return null;
+
+  const rsi = rsiLast(closes, 14);
+  const atr = atrLast(kl, 14);
+  const macd = macdLast(closes);
+
+  // 1. 趋势 EMA
+  let trendScore = 0, trendNote = "均线缠绕";
+  if (ema9 > ema21) {
+    trendScore = price > ema9 ? 2 : 1;
+    trendNote = price > ema9 ? "多头排列" : "均线转多，价格回踩";
+  } else if (ema9 < ema21) {
+    trendScore = price < ema9 ? -2 : -1;
+    trendNote = price < ema9 ? "空头排列" : "均线转空，价格反抽";
+  }
+
+  // 2. MACD 柱
+  let macdScore = 0, macdNote = "数据不足";
+  if (macd) {
+    const { hist, prevHist } = macd;
+    if (hist > 0) macdScore = prevHist != null && hist < prevHist ? 1 : 2;
+    else if (hist < 0) macdScore = prevHist != null && hist > prevHist ? -1 : -2;
+    macdNote = hist > 0
+      ? (prevHist != null && hist < prevHist ? "红柱缩短" : "红柱放大")
+      : (prevHist != null && hist > prevHist ? "绿柱收敛" : "绿柱放大");
+  }
+
+  // 3. RSI（均值回归，超买偏空 / 超卖偏多）
+  let rsiScore = 0, rsiNote = "—";
+  if (rsi != null) {
+    rsiScore = clamp((50 - rsi) / 10, -2, 2);
+    if (rsi >= 70) rsiNote = "超买，回落风险";
+    else if (rsi <= 30) rsiNote = "超卖，反弹机会";
+    else if (rsi > 55) rsiNote = "偏强";
+    else if (rsi < 45) rsiNote = "偏弱";
+    else rsiNote = "中性";
+  }
+
+  // 4. 区间突破（Donchian 20）
+  let brkScore = 0, brkNote = "区间内";
+  const n = 20;
+  if (kl.length > n + 1) {
+    const prev = kl.slice(-n - 1, -1);
+    const hi = Math.max(...prev.map((k) => k.h));
+    const lo = Math.min(...prev.map((k) => k.l));
+    if (price > hi) { brkScore = 2; brkNote = "向上突破 20 根高点"; }
+    else if (price < lo) { brkScore = -2; brkNote = "向下跌破 20 根低点"; }
+    else {
+      const pos = (price - lo) / (hi - lo);
+      brkScore = clamp((pos - 0.5) * 2, -1, 1);
+      brkNote = pos > 0.5 ? "位于区间上半部" : "位于区间下半部";
+    }
+  }
+
+  // 5. 量能（当前K线相对 20 根均量）
+  let volScore = 0, volNote = "数据不足";
+  const vols = kl.slice(-21, -1).map((k) => k.v);
+  if (vols.length >= 10) {
+    const avg = vols.reduce((a, b) => a + b, 0) / vols.length;
+    const ratio = avg > 0 ? last.v / avg : 1;
+    const bullish = last.c > last.o;
+    const dir = bullish ? 1 : last.c < last.o ? -1 : 0;
+    if (ratio >= 1.5) volScore = 2 * dir;
+    else if (ratio >= 1.0) volScore = 1 * dir;
+    volNote = `${ratio.toFixed(1)}× 均量 · ${bullish ? "阳线" : last.c < last.o ? "阴线" : "十字"}`;
+  }
+
+  // 6. 动量（3 根变化 / ATR）
+  let momScore = 0, momNote = "—";
+  if (atr && kl.length > 4) {
+    const delta = price - kl[kl.length - 4].c;
+    momScore = clamp(delta / atr, -2, 2);
+    momNote = `${delta >= 0 ? "+" : ""}${delta.toFixed(0)} USDT / ${(Math.abs(delta / atr)).toFixed(1)} ATR`;
+  }
+
+  const factors = [
+    { key: "trend", name: "趋势 EMA9/21", weight: 0.25, score: trendScore, note: trendNote,
+      val: `${fmt(ema9)} / ${fmt(ema21)}` },
+    { key: "macd", name: "MACD 12/26/9", weight: 0.20, score: macdScore, note: macdNote,
+      val: `柱 ${macd ? fmtSigned(macd.hist) : "—"}` },
+    { key: "rsi", name: "RSI 14", weight: 0.15, score: rsiScore, note: rsiNote,
+      val: rsi != null ? rsi.toFixed(1) : "—" },
+    { key: "breakout", name: "区间突破 20", weight: 0.15, score: brkScore, note: brkNote,
+      val: "Donchian 通道" },
+    { key: "volume", name: "量能对比", weight: 0.15, score: volScore, note: volNote,
+      val: "当前 vs 20 均量" },
+    { key: "momentum", name: "动量 3 根", weight: 0.10, score: momScore, note: momNote,
+      val: atr ? `ATR ${atr.toFixed(0)}` : "—" }
+  ];
+
+  let raw = 0;
+  for (const f of factors) raw += f.weight * clamp(f.score, -2, 2);
+  const score = Math.round(clamp(raw * 50, -100, 100));
+  const thr = settings.threshold;
+  const dir = score >= thr ? "long" : score <= -thr ? "short" : "neutral";
+
+  return { score, dir, factors, atr, rsi, ema9, ema21, macdHist: macd ? macd.hist : null, price };
+}
+
+function fmt(v) {
+  return v == null ? "—" : v.toLocaleString("en-US", { maximumFractionDigits: 1, minimumFractionDigits: 1 });
+}
+function fmtSigned(v) {
+  if (v == null) return "—";
+  const s = Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(2);
+  return (v >= 0 ? "+" : "") + s;
+}
+const DIR_CN = { long: "强烈做多", short: "强烈做空", neutral: "观望" };
+
+/* ============================================================
+   V4：强信号提醒（声音 / 振动 / 浏览器通知）
+   ============================================================ */
+const alertState = { dir: "", score: 0, at: 0, ctx: null };
+let suppressAlert = false;
+
+function maybeAlert(disp) {
+  if (state.demo || suppressAlert || !disp || !settings.alert || disp.dir === "neutral") return;
+  const strength = Math.abs(disp.score);
+  if (strength < settings.threshold) return;
+  const now = Date.now();
+  const changed = disp.dir !== alertState.dir;
+  const stronger = strength >= Math.abs(alertState.score) + 20;
+  if (!changed && !stronger) return;
+  if (now - alertState.at < 60 * 1000) return;
+
+  alertState.dir = disp.dir;
+  alertState.score = disp.score;
+  alertState.at = now;
+  fireAlert(disp);
+}
+
+function fireAlert(disp) {
+  const msg = `${DIR_CN[disp.dir]} ${disp.score > 0 ? "+" : ""}${disp.score} · 下一根 5m ${disp.dir === "long" ? "偏多" : "偏空"}`;
+  showToast(msg, disp.dir);
+  if (settings.sound) beep(disp.dir);
+  if (settings.vibrate && navigator.vibrate) {
+    try { navigator.vibrate([120, 60, 160]); } catch (e) {}
+  }
+  if (settings.notify && "Notification" in window && Notification.permission === "granted") {
+    try {
+      new Notification("BTC 5分钟 · 强信号", { body: msg, tag: "btc5m-v4", silent: true });
+    } catch (e) {}
+  }
+}
+
+function beep(dir) {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    if (!alertState.ctx) alertState.ctx = new Ctx();
+    const ctx = alertState.ctx;
+    if (ctx.state === "suspended") ctx.resume();
+    const notes = dir === "long" ? [660, 880] : [523, 392];
+    notes.forEach((freq, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const t = ctx.currentTime + i * 0.16;
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(freq, t);
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(0.16, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.15);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + 0.17);
+    });
+  } catch (e) {}
+}
+
+let toastTimer = null;
+function showToast(text, dir) {
+  const el = $("toast");
+  if (!el) return;
+  el.textContent = text;
+  el.className = "toast show " + (dir || "");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.className = "toast " + (dir || ""); }, 4200);
+}
+
+// 浏览器要求用户交互后才能播放声音
+function unlockAudio() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    if (!alertState.ctx) alertState.ctx = new Ctx();
+    if (alertState.ctx.state === "suspended") alertState.ctx.resume();
+  } catch (e) {}
+}
+
+/* ============================================================
+   数据加载
+   ============================================================ */
+function parseCandle(row) {
+  // Gate 格式：{ t(秒), o, h, l, c, v, a, n, w(窗口是否结束) }
+  return {
+    ts: Number(row.t) * 1000,
+    o: Number(row.o),
+    h: Number(row.h),
+    l: Number(row.l),
+    c: Number(row.c),
+    v: Number(row.v)
+  };
+}
+
+async function loadHistory() {
+  let lastErr = null;
+  for (const url of REST_URLS) {
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 12000);
+      const res = await fetch(url, { cache: "no-store", signal: ctrl.signal });
+      clearTimeout(timer);
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const json = await res.json();
+      if (!Array.isArray(json)) throw new Error(json.message || "返回格式异常");
+      let arr = json.map(parseCandle).sort((a, b) => a.ts - b.ts);
+      if (arr.length < 55) throw new Error("历史K线数量不足：" + arr.length);
+
+      // Gate 的 K 线接口会把当前未收盘的那根也返回，需要剔除出来当作实时K线
+      const now = Date.now();
+      while (arr.length && now - arr[arr.length - 1].ts < BAR_MS) {
+        state.live = arr.pop();
+      }
+      if (arr.length < 55) throw new Error("已收盘K线数量不足：" + arr.length);
+
+      state.kl = arr;
+      state.restRetry = 0;
+      hideBanner();
+      initFromKlines();
+      return true;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  state.restRetry++;
+  showBanner(
+    `无法获取 Gate 历史K线：<b>${escapeHtml(lastErr && lastErr.message || "网络超时")}</b>。` +
+    ` 常见原因：本机网络无法访问 <code>api.gateio.ws</code>（可能需要开启系统代理），或浏览器拦截了跨域请求。` +
+    ` 程序会每 15 秒自动重试；也可以先用 <code>?demo=1</code> 预览界面。`
+  );
+  setTimeout(loadHistory, 15000);
+  return false;
+}
+
+function initFromKlines() {
+  if (!state.kl.length) return;
+  const last = state.kl[state.kl.length - 1];
+  state.lastClosedTs = last.ts;
+  replayStats();
+  lockSignal();
+  renderAll();
+}
+
+function lockSignal() {
+  const sig = computeSignal(state.kl);
+  state.signal = sig;
+  if (sig) {
+    state.pending = {
+      dir: sig.dir,
+      score: sig.score,
+      baseClose: state.kl[state.kl.length - 1].c,
+      targetTs: state.lastClosedTs + BAR_MS,
+      sigTs: state.lastClosedTs
+    };
+  }
+  evalAdvice();
+  restartEvalTimer();   // 收线后立即重算，并从 0 开始重新计时
+}
+
+function onCandleClose(k) {
+  if (k.ts <= state.lastClosedTs) return;
+  if (state.pending && k.ts === state.pending.targetTs) settle(state.pending, k);
+  state.kl.push(k);
+  if (state.kl.length > 400) state.kl = state.kl.slice(-400);
+  state.lastClosedTs = k.ts;
+  state.live = null;
+  recordDiff(k.ts, k.c);
+  lockSignal();
+  renderAll();
+  autoSyncAt = 0;
+  autoSyncTarget();
+}
+
+function settle(p, k) {
+  if (p.dir === "neutral") return;
+  const ret = (k.c - p.baseClose) / p.baseClose * 100;
+  const dirRet = p.dir === "long" ? ret : -ret;
+  const win = dirRet > 0;
+  state.history.unshift({
+    ts: k.ts, dir: p.dir, score: p.score, win, ret: dirRet, replay: false
+  });
+  state.history = state.history.slice(0, HIST_MAX);
+  recalcStats();
+  saveHistory();
+}
+
+// 统计口径与记录列表保持一致：只统计最近 HIST_MAX 期
+function recalcStats() {
+  const s = state.stats;
+  s.settled = 0; s.wins = 0; s.losses = 0; s.streak = 0; s.sumRet = 0; s.replay = 0;
+  for (let i = state.history.length - 1; i >= 0; i--) {
+    const h = state.history[i];
+    s.settled++;
+    if (h.win) { s.wins++; s.streak = s.streak > 0 ? s.streak + 1 : 1; }
+    else { s.losses++; s.streak = s.streak < 0 ? s.streak - 1 : -1; }
+    s.sumRet += h.ret;
+    if (h.replay) s.replay++;
+  }
+}
+
+function replayStats() {
+  const kl = state.kl;
+  const start = Math.max(55, kl.length - (HIST_MAX + 1));
+  const keep = state.history.filter((h) => !h.replay);
+  const known = new Set(keep.map((h) => h.ts));
+  state.history = keep;
+  for (let i = start; i < kl.length - 1; i++) {
+    const sig = computeSignal(kl.slice(0, i + 1));
+    if (!sig || sig.dir === "neutral") continue;
+    const prev = kl[i], next = kl[i + 1];
+    if (known.has(next.ts)) continue;   // 已有真实结算记录，避免重复统计
+    const ret = (next.c - prev.c) / prev.c * 100;
+    const dirRet = sig.dir === "long" ? ret : -ret;
+    const win = dirRet > 0;
+    state.history.push({ ts: next.ts, dir: sig.dir, score: sig.score, win, ret: dirRet, replay: true });
+  }
+  state.history.sort((a, b) => b.ts - a.ts);
+  state.history = state.history.slice(0, HIST_MAX);
+  recalcStats();
+  saveHistory();
+}
+
+/* ============================================================
+   WebSocket
+   ============================================================ */
+function connectWS() {
+  if (state.demo) return;
+  setConn("connecting");
+  let ws;
+  try {
+    ws = new WebSocket(WS_URLS[state.wsIdx]);
+  } catch (e) {
+    scheduleReconnect();
+    return;
+  }
+  state.ws = ws;
+
+  ws.onopen = () => {
+    state.wsRetry = 0;
+    state.lastMsgAt = Date.now();
+    setConn("online");
+    ws.send(JSON.stringify({
+      time: Math.floor(Date.now() / 1000),
+      channel: "futures.candlesticks",
+      event: "subscribe",
+      payload: [INTERVAL, INST]
+    }));
+    clearInterval(state.hb);
+    state.hb = setInterval(() => {
+      if (ws.readyState === 1) {
+        ws.send(JSON.stringify({ time: Math.floor(Date.now() / 1000), channel: "futures.ping" }));
+      }
+    }, 20000);
+  };
+
+  ws.onmessage = (ev) => {
+    state.lastMsgAt = Date.now();
+    const data = ev.data;
+    if (typeof data !== "string") return;
+    if (data === "pong") return;
+    let msg;
+    try { msg = JSON.parse(data); } catch (e) { return; }
+    if (msg.event === "error") { setConn("bad"); return; }
+    if (msg.channel !== "futures.candlesticks" || msg.event !== "update") return;
+
+    let rows = msg.result;
+    if (typeof rows === "string") {
+      try { rows = JSON.parse(rows); } catch (e) { return; }
+    }
+    if (!Array.isArray(rows)) rows = [rows];
+
+    for (const row of rows) {
+      if (!row || row.t == null) continue;
+      const k = parseCandle(row);
+      if (row.w === true) {
+        onCandleClose(k);
+      } else {
+        state.live = k;
+        scheduleRender();
+      }
+    }
+  };
+
+  ws.onclose = () => {
+    clearInterval(state.hb);
+    if (state.conn !== "bad") setConn("retry");
+    scheduleReconnect();
+  };
+
+  ws.onerror = () => {
+    setConn("retry");
+    try { ws.close(); } catch (e) {}
+  };
+}
+
+function scheduleReconnect() {
+  state.wsIdx = (state.wsIdx + 1) % WS_URLS.length;
+  state.wsRetry++;
+  const delay = Math.min(15000, 2000 * state.wsRetry);
+  if (state.wsRetry >= 6) {
+    setConn("bad");
+    showBanner(
+      `WebSocket 连接 Gate 失败（已重试 ${state.wsRetry} 次）。` +
+      ` 请检查本机能否访问 <code>wss://fx-ws.gateio.ws</code>，必要时开启系统代理后刷新页面。`
+    );
+  }
+  setTimeout(connectWS, delay);
+}
+
+function setConn(status) {
+  state.conn = status;
+  const dot = $("connDot"), txt = $("connText");
+  if (!dot) return;
+  if (state.demo) {
+    dot.className = "dot warn";
+    txt.textContent = "模拟数据 DEMO";
+    return;
+  }
+  const map = {
+    init: ["", "正在初始化…"],
+    connecting: ["warn", "连接 Gate…"],
+    online: ["on", "Gate 实时行情"],
+    retry: ["warn", "连接中断，正在重连…"],
+    bad: ["bad", "连接失败"],
+    offline: ["bad", "离线"]
+  };
+  const [cls, text] = map[status] || map.init;
+  dot.className = "dot " + cls;
+  txt.textContent = text;
+}
+
+/* ============================================================
+   渲染
+   ============================================================ */
+function renderAll() {
+  renderSignal();
+  renderTargetCard();
+  renderStats();
+  renderHistory();
+  renderStrip();
+  drawChart();
+  drawEquity();
+}
+
+function scheduleRender() {
+  const now = Date.now();
+  if (now - state.lastRender < 400) return;
+  state.lastRender = now;
+  renderSignal();
+  renderTargetCard();
+  renderStrip();
+  drawChart();
+}
+
+function renderSignal() {
+  const sig = state.signal;
+  const card = $("signalCard");
+  const price = state.live ? state.live.c : (state.kl.length ? state.kl[state.kl.length - 1].c : null);
+
+  if (price != null) $("price").textContent = fmt(price);
+  if (state.kl.length >= 2) {
+    const prev = state.kl[state.kl.length - (state.live ? 1 : 2)].c;
+    const chg = price != null ? (price - prev) / prev * 100 : null;
+    const el = $("chg");
+    if (chg != null) {
+      el.textContent = `${chg >= 0 ? "+" : ""}${chg.toFixed(2)}% · 本根`;
+      el.className = "chg " + (chg >= 0 ? "up" : "down");
+    }
+  }
+
+  const disp = state.advice || sig;
+  if (!disp) {
+    card.className = "card signal neutral";
+    $("dirIcon").textContent = "…";
+    $("dirLabel").textContent = "计算中";
+    $("dirSub").textContent = "等待足够的历史K线";
+    $("evalInfo").textContent = `每 ${state.evalSec} 秒评估一次 · 等待行情`;
+    $("scoreNum").textContent = "—";
+    $("meterFill").style.left = "50%";
+    $("meterFill").style.width = "0";
+    return;
+  }
+
+  card.className = "card signal " + disp.dir;
+  $("dirIcon").textContent = disp.dir === "long" ? "↑" : disp.dir === "short" ? "↓" : "—";
+  $("dirLabel").textContent = DIR_CN[disp.dir];
+  $("dirSub").textContent = disp.dir === "long"
+    ? "下一根 5m K线偏多"
+    : disp.dir === "short" ? "下一根 5m K线偏空" : "多空力量均衡，建议不出手";
+  updateEvalInfo(disp);
+  $("scoreNum").textContent = (disp.score > 0 ? "+" : "") + disp.score;
+
+  const fill = $("meterFill");
+  const w = Math.abs(disp.score) / 2;
+  if (disp.score >= 0) {
+    // 做多在左：从中间向左扩展，红色
+    fill.style.left = (50 - w) + "%";
+    fill.style.width = w + "%";
+    fill.style.background = "linear-gradient(90deg,#f6465d,rgba(246,70,93,.45))";
+  } else {
+    // 做空在右：从中间向右扩展，绿色
+    fill.style.left = "50%";
+    fill.style.width = w + "%";
+    fill.style.background = "linear-gradient(90deg,rgba(14,203,129,.45),#0ecb81)";
+  }
+
+  $("atrVal").textContent = disp.atr ? disp.atr.toFixed(0) : "—";
+  const lastTs = state.lastClosedTs;
+  // 锁定K线以「收盘时刻」展示：lastClosedTs 是K线开始时间，收盘 = 开始 + 5m
+  $("lockTime").textContent = timeOf(lastTs + BAR_MS);
+  $("targetTime").textContent = timeOf(lastTs + BAR_MS * 2);
+  $("lastBarTime").textContent = "最近收盘 " + timeOf(lastTs + BAR_MS);
+
+  // 因子
+  const box = $("factors");
+  if (box.dataset.ready !== "1") {
+    box.innerHTML = sig.factors.map((f) => `
+      <div class="factor" data-f="${f.key}">
+        <div class="f-head">
+          <span class="f-name">${f.name}</span>
+          <span class="f-score">0</span>
+        </div>
+        <div class="f-val">—</div>
+        <div class="f-bar"><span class="mid"></span><i style="left:50%;width:0"></i></div>
+      </div>`).join("");
+    box.dataset.ready = "1";
+  }
+  for (const f of disp.factors) {
+    const el = box.querySelector(`[data-f="${f.key}"]`);
+    if (!el) continue;
+    const sc = clamp(f.score, -2, 2);
+    const scoreEl = el.querySelector(".f-score");
+    scoreEl.textContent = (sc > 0 ? "+" : "") + sc.toFixed(1);
+    scoreEl.className = "f-score " + (sc > 0 ? "pos" : sc < 0 ? "neg" : "zero");
+    el.querySelector(".f-val").textContent = f.val + " · " + f.note;
+    const bar = el.querySelector(".f-bar i");
+    const bw = Math.abs(sc) / 4 * 100;
+    bar.style.left = sc >= 0 ? "50%" : (50 - bw) + "%";
+    bar.style.width = bw + "%";
+    bar.style.background = sc > 0 ? "#f6465d" : sc < 0 ? "#0ecb81" : "transparent";
+  }
+
+  // 实时预览（与 10/15/30/60 秒评估共用同一份结果）
+  const pv = state.advice;
+  const pvEl = $("previewText");
+  if (pv) {
+    pvEl.innerHTML = `<b style="color:${pv.dir === "long" ? "var(--red)" : pv.dir === "short" ? "var(--green)" : "var(--muted)"}">${DIR_CN[pv.dir]} ${pv.score > 0 ? "+" : ""}${pv.score}</b>`;
+  } else {
+    pvEl.textContent = state.live ? "数据不足" : "等待下一根K线开始";
+  }
+}
+
+/* ---------- V4：目标价差卡片 ---------- */
+function fmtDiff(v) {
+  if (v == null || !isFinite(v)) return "—";
+  return (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(2);
+}
+
+function fmtPrice2(v) {
+  if (v == null || !isFinite(v)) return "—";
+  return v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+function setTone(el, v) {
+  if (!el) return;
+  el.classList.remove("tup", "tdown");
+  if (v == null || !isFinite(v)) return;
+  el.classList.add(v >= 0 ? "tup" : "tdown");
+}
+
+function renderTargetCard() {
+  const card = $("targetCard");
+  if (!card) return;
+
+  const price = state.live ? state.live.c : (state.kl.length ? state.kl[state.kl.length - 1].c : null);
+  const start = currentPeriodStart();
+  const t = targetForPeriod(start);
+  const st = diffAverage();
+  // V4：差额统一 ÷2 后再参与平均与修正计算
+  const rawDiff = t && price != null ? price - t.price : null;
+  const diff = rawDiff != null ? rawDiff / 2 : null;
+  const lastDiff = st.last ? st.last.diff / 2 : null;
+  const avgDiff = st.avg / 2;
+  const adj = diff != null ? diff - avgDiff : null;
+  const thr = settings.threshold;
+
+  $("tCurrent").textContent = fmtPrice2(price);
+  $("tTarget").textContent = t ? fmtPrice2(t.price) : "—";
+  const idTag = t && t.id ? " · #" + t.id : "";
+  $("tPeriod").textContent = t
+    ? `${timeOf(t.startTs)} 期 · ${t.source === "gate" ? "Gate 自动" : "手动填写"}${idTag}`
+    : "等待目标价";
+  $("tStatus").textContent = t
+    ? `${timeOf(t.startTs)} 期 · ${t.source === "gate" ? "自动同步" : "手动"}${idTag}`
+    : "待同步";
+  $("tStatus").style.color = t ? "var(--dim)" : "var(--gold)";
+
+  const diffEl = $("tDiff");
+  diffEl.textContent = fmtDiff(diff);
+  setTone(diffEl, diff);
+
+  $("tLast").textContent = lastDiff != null ? fmtDiff(lastDiff) : "—";
+  setTone($("tLast"), lastDiff);
+  $("tAvg").textContent = st.count ? fmtDiff(avgDiff) : "—";
+  setTone($("tAvg"), st.count ? avgDiff : null);
+  $("tAdj").textContent = fmtDiff(adj);
+  setTone($("tAdj"), adj);
+
+  const box = $("tVerdict");
+  const label = box.querySelector(".tlabel");
+  const sub = box.querySelector(".tsub");
+  box.className = "tverdict neutral";
+  if (adj == null) {
+    label.textContent = "观望";
+    sub.textContent = "等待目标价";
+  } else if (adj >= thr) {
+    box.className = "tverdict long";
+    label.textContent = "强烈做多 " + fmtDiff(adj);
+    sub.textContent = `修正差额 ≥ +${thr} · 样本 ${st.count} 期`;
+  } else if (adj <= -thr) {
+    box.className = "tverdict short";
+    label.textContent = "强烈做空 " + fmtDiff(adj);
+    sub.textContent = `修正差额 ≤ −${thr} · 样本 ${st.count} 期`;
+  } else {
+    label.textContent = "观望";
+    sub.textContent = `修正差额 ${fmtDiff(adj)}，未达 ±${thr}`;
+  }
+
+  const input = $("tInput");
+  if (input && document.activeElement !== input) {
+    input.value = t ? t.price.toFixed(2) : "";
+    input.placeholder = t ? "修改本期目标价" : "手动填写目标价";
+  }
+
+  const open = $("tOpen");
+  if (open) {
+    open.href = t && t.id
+      ? `https://www.gatewebsite.com/zh/trade-events/btc-updown-5m?eventId=${encodeURIComponent(t.id)}&outcome=Down`
+      : "https://www.gatewebsite.com/zh/trade-events/btc-updown-5m";
+  }
+}
+
+function renderStats() {
+  const s = state.stats;
+  const pct = s.settled ? s.wins / s.settled * 100 : null;
+  const wr = $("winRate");
+  wr.textContent = pct == null ? "—" : pct.toFixed(1) + "%";
+  wr.className = "v " + (pct == null ? "" : pct >= 50 ? "pos" : "neg");
+  $("winRateSub").textContent = s.settled ? `${s.wins} / ${s.settled} 笔` : "暂无样本";
+  $("settled").textContent = s.settled;
+  $("settledSub").textContent = `赢 ${s.wins} / 输 ${s.losses}`;
+
+  const st = $("streak");
+  if (s.streak === 0) { st.textContent = "—"; st.className = "v"; $("streakSub").textContent = "无连续记录"; }
+  else {
+    st.textContent = (s.streak > 0 ? "连对 ×" : "连错 ×") + Math.abs(s.streak);
+    st.className = "v " + (s.streak > 0 ? "pos" : "neg");
+    $("streakSub").textContent = s.streak > 0 ? "趋势判断有效" : "注意反向风险";
+  }
+
+  const cr = $("cumRet");
+  cr.textContent = (s.sumRet >= 0 ? "+" : "") + s.sumRet.toFixed(2) + "%";
+  cr.className = "v " + (s.sumRet > 0 ? "pos" : s.sumRet < 0 ? "neg" : "");
+}
+
+function renderHistory() {
+  const body = $("histBody");
+  const list = state.history.slice(0, HIST_MAX);
+  $("histCount").textContent = state.history.length
+    ? `${state.history.length}/${HIST_MAX} 期${state.stats.replay ? ` · 回放 ${state.stats.replay}` : ""}`
+    : `0/${HIST_MAX} 期`;
+  if (!list.length) {
+    body.innerHTML = `<tr><td colspan="5" class="empty">等待第一根K线收盘…</td></tr>`;
+    return;
+  }
+  body.innerHTML = list.map((h) => {
+    const res = h.win == null
+      ? `<span class="res-none">—</span>`
+      : h.win ? `<span class="res-win">对</span>` : `<span class="res-lose">错</span>`;
+    const ret = h.ret == null ? "—" : `<span style="color:${h.ret >= 0 ? "var(--green)" : "var(--red)"}">${h.ret >= 0 ? "+" : ""}${h.ret.toFixed(2)}%</span>`;
+    return `<tr>
+      <td>${timeOf(h.ts + BAR_MS)}${h.replay ? ' <span style="color:var(--dim);font-size:10px">回放</span>' : ""}</td>
+      <td><span class="tag-dir ${h.dir}">${DIR_CN[h.dir]}</span></td>
+      <td>${h.score > 0 ? "+" : ""}${h.score}</td>
+      <td>${res}</td>
+      <td>${ret}</td>
+    </tr>`;
+  }).join("");
+}
+
+function drawChart() {
+  const cv = $("chart");
+  if (!cv) return;
+  const dpr = window.devicePixelRatio || 1;
+  const W = cv.clientWidth || 600;
+  const H = cv.clientHeight || 268;
+  cv.width = Math.round(W * dpr);
+  cv.height = Math.round(H * dpr);
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+
+  const all = state.kl;
+  if (!all.length) {
+    ctx.fillStyle = "#5a6472";
+    ctx.font = "12px system-ui";
+    ctx.textAlign = "center";
+    ctx.fillText("等待K线数据…", W / 2, H / 2);
+    return;
+  }
+  const data = all.slice(-60);
+  if (state.live) data.push(state.live);
+
+  const padL = 6, padR = 58, padT = 10, padB = 20;
+  const cw = W - padL - padR, ch = H - padT - padB;
+  let hi = -Infinity, lo = Infinity;
+  for (const k of data) { hi = Math.max(hi, k.h); lo = Math.min(lo, k.l); }
+  const span = (hi - lo) || 1;
+  hi += span * 0.06; lo -= span * 0.06;
+
+  const x = (i) => padL + (cw * (i + 0.5)) / data.length;
+  const y = (p) => padT + ch * (1 - (p - lo) / (hi - lo));
+
+  // 网格
+  ctx.strokeStyle = "rgba(255,255,255,.055)";
+  ctx.lineWidth = 1;
+  ctx.font = "10px system-ui";
+  ctx.fillStyle = "#5a6472";
+  ctx.textAlign = "left";
+  for (let i = 0; i <= 3; i++) {
+    const gy = padT + ch * i / 3;
+    ctx.beginPath();
+    ctx.moveTo(padL, gy + 0.5);
+    ctx.lineTo(W - padR, gy + 0.5);
+    ctx.stroke();
+    const val = hi - (hi - lo) * i / 3;
+    ctx.fillText(val.toLocaleString("en-US", { maximumFractionDigits: 0 }), W - padR + 8, gy + 3);
+  }
+
+  // EMA 线（基于完整序列）
+  const closes = all.map((k) => k.c).concat(state.live ? [state.live.c] : []);
+  const e9 = emaArray(closes, 9);
+  const e21 = emaArray(closes, 21);
+  const offset = all.length + (state.live ? 1 : 0) - data.length;
+  const drawLine = (arr, color) => {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    let started = false;
+    for (let i = 0; i < data.length; i++) {
+      const v = arr[offset + i];
+      if (v == null) continue;
+      const px = x(i), py = y(v);
+      if (!started) { ctx.moveTo(px, py); started = true; }
+      else ctx.lineTo(px, py);
+    }
+    ctx.stroke();
+  };
+  drawLine(e21, "rgba(240,185,11,.85)");
+  drawLine(e9, "rgba(74,134,255,.85)");
+
+  // 蜡烛
+  const bw = Math.max(2, cw / data.length * 0.6);
+  for (let i = 0; i < data.length; i++) {
+    const k = data[i];
+    const up = k.c >= k.o;
+    const color = up ? "#0ecb81" : "#f6465d";
+    const isLive = state.live && i === data.length - 1;
+    ctx.globalAlpha = isLive ? 0.55 : 1;
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = 1;
+    const cx = x(i);
+    ctx.beginPath();
+    ctx.moveTo(cx, y(k.h));
+    ctx.lineTo(cx, y(k.l));
+    ctx.stroke();
+    const bodyTop = y(Math.max(k.o, k.c));
+    const bodyH = Math.max(1, Math.abs(y(k.o) - y(k.c)));
+    if (up) ctx.fillRect(cx - bw / 2, bodyTop, bw, bodyH);
+    else {
+      ctx.fillStyle = "rgba(11,14,17,.9)";
+      ctx.fillRect(cx - bw / 2, bodyTop, bw, bodyH);
+      ctx.strokeRect(cx - bw / 2, bodyTop, bw, bodyH);
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // 收盘价虚线
+  const lastC = data[data.length - 1].c;
+  ctx.setLineDash([4, 4]);
+  ctx.strokeStyle = "rgba(255,255,255,.22)";
+  ctx.beginPath();
+  ctx.moveTo(padL, y(lastC));
+  ctx.lineTo(W - padR, y(lastC));
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // 时间标签
+  ctx.fillStyle = "#5a6472";
+  ctx.textAlign = "center";
+  const marks = [0, Math.floor(data.length / 2), data.length - 1];
+  for (const i of marks) {
+    const label = timeOf(data[i].ts);
+    ctx.fillText(label, clamp(x(i), 18, W - padR - 10), H - 5);
+  }
+}
+
+/* ---------- V4：近 18 期累计收益曲线 ---------- */
+function drawEquity() {
+  const cv = $("equity");
+  if (!cv) return;
+  const dpr = window.devicePixelRatio || 1;
+  const W = cv.clientWidth || 480;
+  const H = cv.clientHeight || 112;
+  cv.width = Math.round(W * dpr);
+  cv.height = Math.round(H * dpr);
+  const ctx = cv.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+
+  const info = $("eqInfo");
+  const rows = state.history.slice().sort((a, b) => a.ts - b.ts);
+  if (!rows.length) {
+    if (info) info.textContent = "—";
+    ctx.fillStyle = "#5a6472";
+    ctx.font = "12px system-ui";
+    ctx.textAlign = "center";
+    ctx.fillText("等待结算数据…", W / 2, H / 2);
+    return;
+  }
+
+  let acc = 0, peak = 0, mdd = 0;
+  const pts = [];
+  for (const r of rows) {
+    acc += r.ret;
+    peak = Math.max(peak, acc);
+    mdd = Math.min(mdd, acc - peak);
+    pts.push(acc);
+  }
+
+  const padL = 8, padR = 56, padT = 12, padB = 18;
+  const amp = Math.max(0.4, Math.max(...pts.map((v) => Math.abs(v)))) * 1.2;
+  const lo = -amp, hi = amp;
+  const x = (i) => padL + (W - padL - padR) * (pts.length === 1 ? 0.5 : i / (pts.length - 1));
+  const y = (v) => padT + (H - padT - padB) * (1 - (v - lo) / (hi - lo));
+
+  // 网格与零轴
+  ctx.strokeStyle = "rgba(255,255,255,.055)";
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 2; i++) {
+    const gy = padT + (H - padT - padB) * i / 2;
+    ctx.beginPath();
+    ctx.moveTo(padL, gy + 0.5);
+    ctx.lineTo(W - padR, gy + 0.5);
+    ctx.stroke();
+  }
+  ctx.strokeStyle = "rgba(255,255,255,.2)";
+  ctx.setLineDash([3, 3]);
+  ctx.beginPath();
+  ctx.moveTo(padL, y(0));
+  ctx.lineTo(W - padR, y(0));
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  const up = acc >= 0;
+  const line = up ? "#f6465d" : "#0ecb81";
+  const fillTop = up ? "rgba(246,70,93,.22)" : "rgba(14,203,129,.22)";
+  const fillBottom = up ? "rgba(246,70,93,0)" : "rgba(14,203,129,0)";
+
+  // 面积
+  const grad = ctx.createLinearGradient(0, padT, 0, H - padB);
+  grad.addColorStop(0, fillTop);
+  grad.addColorStop(1, fillBottom);
+  ctx.beginPath();
+  ctx.moveTo(x(0), y(0));
+  for (let i = 0; i < pts.length; i++) ctx.lineTo(x(i), y(pts[i]));
+  ctx.lineTo(x(pts.length - 1), y(0));
+  ctx.closePath();
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // 折线
+  ctx.beginPath();
+  for (let i = 0; i < pts.length; i++) {
+    if (i === 0) ctx.moveTo(x(i), y(pts[i]));
+    else ctx.lineTo(x(i), y(pts[i]));
+  }
+  ctx.strokeStyle = line;
+  ctx.lineWidth = 1.8;
+  ctx.stroke();
+
+  // 末点
+  const lx = x(pts.length - 1), ly = y(pts[pts.length - 1]);
+  ctx.fillStyle = line;
+  ctx.beginPath();
+  ctx.arc(lx, ly, 3, 0, Math.PI * 2);
+  ctx.fill();
+
+  // 右侧刻度
+  ctx.fillStyle = "#5a6472";
+  ctx.font = "10px system-ui";
+  ctx.textAlign = "left";
+  ctx.fillText((hi).toFixed(1) + "%", W - padR + 6, padT + 9);
+  ctx.fillText("0", W - padR + 6, y(0) + 3);
+  ctx.fillText(lo.toFixed(1) + "%", W - padR + 6, H - padB);
+
+  if (info) {
+    info.textContent = `${acc >= 0 ? "+" : ""}${acc.toFixed(2)}% · 回撤 ${mdd.toFixed(2)}%`;
+    info.style.color = acc > 0 ? "var(--red)" : acc < 0 ? "var(--green)" : "var(--dim)";
+  }
+}
+
+function timeOf(ts) {
+  const d = new Date(ts);
+  return d.toLocaleTimeString("zh-CN", { hour12: false, hour: "2-digit", minute: "2-digit" });
+}
+
+function clockOf(ts) {
+  const d = new Date(ts);
+  return d.toLocaleTimeString("zh-CN", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+// 距离下一次评估还剩多少秒（收线后自动从满值重新计）
+function evalLeft() {
+  if (!state.lastEvalAt) return state.evalSec;
+  return Math.max(0, state.evalSec - Math.floor((Date.now() - state.lastEvalAt) / 1000));
+}
+
+function updateEvalInfo(disp) {
+  if (!state.lastEvalAt || !disp) {
+    $("evalInfo").textContent = `每 ${state.evalSec} 秒评估一次 · 等待行情`;
+    return;
+  }
+  $("evalInfo").textContent = `每 ${state.evalSec} 秒评估 · 上次 ${clockOf(state.lastEvalAt)} · ${DIR_CN[disp.dir]} · ${evalLeft()}s 后刷新`;
+}
+
+/* ============================================================
+   顶部：最近 18 个 5 分钟节点的涨跌
+   ============================================================ */
+function renderStrip() {
+  const grid = $("stripGrid");
+  const kl = state.kl;
+  if (!kl.length) { grid.innerHTML = ""; $("stripRange").textContent = "—"; return; }
+  const bars = kl.slice(-HIST_MAX);
+  $("stripRange").textContent = `${timeOf(bars[0].ts)} → ${timeOf(bars[bars.length - 1].ts)}`;
+
+  const items = bars.map((k) => {
+    const up = k.c >= k.o;                                  // 上涨：红色向上箭头
+    const c = up ? "246,70,93" : "14,203,129";               // 下跌：绿色向下箭头
+    return `<i style="background:rgba(${c},.16);border:1px solid rgba(${c},.35);color:${up ? "var(--red)" : "var(--green)"}" title="${timeOf(k.ts)} ${up ? "上涨" : "下跌"}">${up ? "↑" : "↓"}</i>`;
+  });
+  grid.innerHTML = items.join("");
+}
+
+/* ============================================================
+   每 10 / 15 / 30 / 60 秒评估一次方向（收线时另外立即评估）
+   ============================================================ */
+let evalTimer = null;
+
+function restartEvalTimer() {
+  if (evalTimer) clearInterval(evalTimer);
+  evalTimer = setInterval(evalAdvice, state.evalSec * 1000);
+}
+
+function setEvalSec(sec) {
+  state.evalSec = sec;
+  settings.evalSec = sec;
+  saveSettings();
+  document.querySelectorAll(".eval-btns button").forEach((btn) => {
+    btn.classList.toggle("on", Number(btn.dataset.sec) === sec);
+  });
+  restartEvalTimer();
+  evalAdvice();
+}
+
+function evalAdvice() {
+  if (state.kl.length < 55) state.advice = null;
+  else {
+    const bars = state.live ? state.kl.slice(-79).concat(state.live) : state.kl.slice(-79);
+    state.advice = computeSignal(bars);
+  }
+  state.lastEvalAt = Date.now();
+  maybeAlert(state.advice);
+  renderSignal();
+}
+
+/* ============================================================
+   倒计时
+   ============================================================ */
+function tickCountdown() {
+  updateEvalInfo(state.advice || state.signal);
+  if (state.demo) {
+    $("countdown").textContent = "DEMO 加速";
+    return;
+  }
+  const now = Date.now();
+  const next = Math.ceil(now / BAR_MS) * BAR_MS;
+  const remain = Math.max(0, next - now);
+  const m = Math.floor(remain / 60000);
+  const s = Math.floor((remain % 60000) / 1000);
+  $("countdown").textContent = `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+
+  // 兜底：WebSocket 漏推送时就落后超过一根K线，用 REST 补
+  if (state.lastClosedTs && now - state.lastClosedTs > BAR_MS + 6000 && now - state.lastSyncAt > 20000) {
+    state.lastSyncAt = now;
+    syncTail();
+  }
+
+  // 兜底：WS 假在线（连着但不推数据，手机切后台后常见）超 45 秒就主动断开重连
+  if (state.lastMsgAt && now - state.lastMsgAt > 45000) {
+    state.lastMsgAt = now;
+    if (state.ws && state.ws.readyState === 1) {
+      try { state.ws.close(); } catch (e) {}
+    }
+    renderAll();
+    syncTail();
+  }
+}
+
+async function syncTail() {
+  if (state.demo) return;
+  try {
+    const res = await fetch(REST_BASE + "&limit=6", { cache: "no-store" });
+    if (!res.ok) return;
+    const json = await res.json();
+    if (!Array.isArray(json)) return;
+    const now = Date.now();
+    const arr = json.map(parseCandle).sort((a, b) => a.ts - b.ts);
+    for (const k of arr) {
+      if (now - k.ts >= BAR_MS && k.ts > state.lastClosedTs) onCandleClose(k);
+    }
+    const running = arr.find((k) => now - k.ts < BAR_MS);
+    if (running) state.live = running;
+    else if (state.live && now - state.live.ts >= BAR_MS) state.live = null;
+    renderAll();
+  } catch (e) { /* 静默，下次再试 */ }
+}
+setInterval(tickCountdown, 250);
+
+/* ============================================================
+   提示横幅
+   ============================================================ */
+function showBanner(html) {
+  const b = $("banner");
+  b.innerHTML = html;
+  b.classList.add("show");
+}
+function hideBanner() { $("banner").classList.remove("show"); }
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+/* ============================================================
+   DEMO 模式：离线自检 / 界面预览
+   ============================================================ */
+function startDemo() {
+  setConn("connecting");
+  const kl = [];
+  let price = 101000;
+  const now = Math.floor(Date.now() / BAR_MS) * BAR_MS;
+  for (let i = 150; i > 0; i--) {
+    const ts = now - i * BAR_MS;
+    const drift = Math.sin(i / 18) * 0.0006 + (Math.random() - 0.5) * 0.0035;
+    const o = price;
+    const c = o * (1 + drift);
+    const h = Math.max(o, c) * (1 + Math.random() * 0.0012);
+    const l = Math.min(o, c) * (1 - Math.random() * 0.0012);
+    kl.push({ ts, o, h, l, c, v: 200 + Math.random() * 300, confirm: true });
+    price = c;
+  }
+  state.kl = kl;
+  initFromKlines();
+  setTimeout(() => {
+    showBanner(`当前为 <b>模拟数据 DEMO</b> 模式（3 秒模拟一根 5m K线），用于预览界面与统计逻辑，<b>不代表真实行情</b>。去掉网址后的 <code>?demo=1</code> 即为实时模式。`);
+  }, 0);
+
+  // 模拟实时价格跳动 + 新K线
+  setInterval(() => {
+    const last = state.kl[state.kl.length - 1];
+    const drift = (Math.random() - 0.5) * 0.002;
+    const c = last.c * (1 + drift);
+    state.live = {
+      ts: state.lastClosedTs + BAR_MS,
+      o: last.c, h: Math.max(last.c, c) * (1 + Math.random() * 0.0008),
+      l: Math.min(last.c, c) * (1 - Math.random() * 0.0008),
+      c, v: 250, confirm: false
+    };
+    scheduleRender();
+  }, 700);
+
+  setInterval(() => {
+    const live = state.live;
+    if (!live) return;
+    const k = { ...live, confirm: true };
+    state.live = null;
+    onCandleClose(k);
+  }, 3000);
+}
+
+/* ============================================================
+   V4：设置面板
+   ============================================================ */
+function updateSettingsUI() {
+  const thr = settings.threshold;
+  const range = $("thrRange");
+  if (range) range.value = thr;
+  $("thrVal").textContent = "±" + thr;
+  $("thrMeta").textContent = "±" + thr;
+  $("swAlert").checked = !!settings.alert;
+  $("swSound").checked = !!settings.sound;
+  $("swVibrate").checked = !!settings.vibrate;
+  $("swNotify").checked = !!settings.notify;
+
+  const hint = $("notifyHint");
+  if (!("Notification" in window)) {
+    hint.textContent = "当前浏览器不支持通知，可用页面内提醒与声音";
+  } else if (Notification.permission === "denied") {
+    hint.textContent = "通知已被浏览器拒绝，请在站点设置里重新允许";
+  } else if (settings.notify && Notification.permission === "granted") {
+    hint.textContent = "已开启：切到后台也能收到强信号通知";
+  } else {
+    hint.textContent = "首次开启会请求授权；iOS 需先“添加到主屏幕”";
+  }
+
+  $("localHint").textContent = state.history.length ? `${state.history.length} 期已保存` : "暂无记录";
+}
+
+function openSettings() {
+  updateSettingsUI();
+  $("settingsModal").classList.add("on");
+  $("settingsModal").setAttribute("aria-hidden", "false");
+}
+
+function closeSettings() {
+  $("settingsModal").classList.remove("on");
+  $("settingsModal").setAttribute("aria-hidden", "true");
+}
+
+function setThreshold(v, persist) {
+  const thr = Math.min(60, Math.max(10, Math.round(v / 5) * 5));
+  settings.threshold = thr;
+  $("thrVal").textContent = "±" + thr;
+  $("thrMeta").textContent = "±" + thr;
+  $("thrRange").value = thr;
+  if (!persist) return;
+
+  saveSettings();
+  if (state.kl.length >= 55) {
+    suppressAlert = true;
+    lockSignal();
+    suppressAlert = false;
+    const d = state.advice || state.signal;
+    if (d) { alertState.dir = d.dir; alertState.score = d.score; alertState.at = Date.now(); }
+    renderAll();
+  }
+}
+
+async function setNotify(on) {
+  if (!on) {
+    settings.notify = false;
+    saveSettings();
+    updateSettingsUI();
+    return;
+  }
+  if (!("Notification" in window)) {
+    settings.notify = false;
+    saveSettings();
+    updateSettingsUI();
+    return;
+  }
+  let perm = Notification.permission;
+  if (perm === "default") {
+    try { perm = await Notification.requestPermission(); } catch (e) { perm = "denied"; }
+  }
+  settings.notify = perm === "granted";
+  saveSettings();
+  updateSettingsUI();
+  if (settings.notify) showToast("已开启浏览器通知", "");
+}
+
+function bindSettings() {
+  $("btnSettings").addEventListener("click", openSettings);
+  $("btnCloseSettings").addEventListener("click", closeSettings);
+  $("settingsModal").addEventListener("click", (e) => {
+    if (e.target === $("settingsModal")) closeSettings();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") closeSettings();
+  });
+
+  $("thrRange").addEventListener("input", (e) => setThreshold(Number(e.target.value), false));
+  $("thrRange").addEventListener("change", (e) => setThreshold(Number(e.target.value), true));
+
+  $("swAlert").addEventListener("change", (e) => { settings.alert = e.target.checked; saveSettings(); });
+  $("swSound").addEventListener("change", (e) => {
+    settings.sound = e.target.checked;
+    saveSettings();
+    if (settings.sound) unlockAudio();
+  });
+  $("swVibrate").addEventListener("change", (e) => { settings.vibrate = e.target.checked; saveSettings(); });
+  $("swNotify").addEventListener("change", (e) => setNotify(e.target.checked));
+
+  $("btnClear").addEventListener("click", () => {
+    if (!window.confirm("确定清空本地保存的信号记录与统计？")) return;
+    state.history = [];
+    recalcStats();
+    saveHistory();
+    renderAll();
+    updateSettingsUI();
+  });
+
+  document.addEventListener("pointerdown", unlockAudio, { passive: true });
+}
+
+function bindTargetUI() {
+  const save = () => {
+    const v = Number($("tInput").value);
+    if (!isFinite(v) || v <= 0) {
+      showToast("请输入有效的目标价格", "");
+      return;
+    }
+    const start = currentPeriodStart();
+    applyTarget(start, v, { source: "manual" });
+    showToast("已保存本期目标价 " + v.toFixed(2), "");
+  };
+  $("tSave").addEventListener("click", save);
+  $("tInput").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") { e.preventDefault(); save(); }
+  });
+  $("tInput").addEventListener("focus", () => { try { $("tInput").select(); } catch (e) {} });
+}
+
+/* ============================================================
+   启动
+   ============================================================ */
+(function boot() {
+  // 播放器式布局：factor 卡片初始占位
+  $("factors").innerHTML = ["趋势 EMA9/21", "MACD 12/26/9", "RSI 14", "区间突破 20", "量能对比", "动量 3 根"]
+    .map((n) => `<div class="factor"><div class="f-head"><span class="f-name">${n}</span><span class="f-score">—</span></div><div class="f-val">—</div><div class="f-bar"><span class="mid"></span><i style="left:50%;width:0"></i></div></div>`).join("");
+
+  document.querySelectorAll(".eval-btns button").forEach((btn) => {
+    btn.addEventListener("click", () => setEvalSec(Number(btn.dataset.sec)));
+    btn.classList.toggle("on", Number(btn.dataset.sec) === state.evalSec);
+  });
+
+  if (settings.notify && (!("Notification" in window) || Notification.permission !== "granted")) {
+    settings.notify = false;
+    saveSettings();
+  }
+  bindSettings();
+  bindTargetUI();
+  restoreHistory();
+  restoreTargetData();
+  updateSettingsUI();
+  restartEvalTimer();
+  autoSyncTarget();
+  setInterval(autoSyncTarget, AUTO_SYNC_MS);
+
+  window.addEventListener("resize", () => {
+    clearTimeout(state.rsT);
+    state.rsT = setTimeout(() => { drawChart(); drawEquity(); }, 150);
+  });
+
+  if (state.demo) {
+    startDemo();
+    return;
+  }
+
+  tickCountdown();
+  renderAll();
+
+  const ok = loadHistory().then((success) => {
+    if (success) connectWS();
+    else connectWS(); // 即使历史失败也保持 WS 尝试，便于网络恢复
+  });
+  // 手机切后台再回前台：iOS 常把 WS 挂死但不触发 onclose，回到前台立即自检
+  const resumeCheck = () => {
+    if (state.demo) return;
+    const now = Date.now();
+    if (!state.kl.length) return;
+    if (!state.lastMsgAt || now - state.lastMsgAt > 15000) {
+      state.lastMsgAt = now;
+      if (state.ws && state.ws.readyState === 1) {
+        try { state.ws.close(); } catch (e) {}
+      }
+      syncTail();
+    }
+    restartEvalTimer();
+    evalAdvice();
+  };
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") resumeCheck();
+  });
+  window.addEventListener("pageshow", (e) => { if (e.persisted) resumeCheck(); });
+})();
+</script>
+</body>
+</html>

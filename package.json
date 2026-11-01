@@ -1,0 +1,7 @@
+{
+  "name": "btc5m-netlify",
+  "private": true,
+  "engines": {
+    "node": ">=18"
+  }
+}

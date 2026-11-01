@@ -1,0 +1,18 @@
+{
+  "name": "BTC 5分钟方向提示器 V4",
+  "short_name": "BTC 5m V4",
+  "description": "比特币 5 分钟 K 线方向提示：六因子评分、Gate 目标价差修正方向、强信号提醒与本地记录",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b0e11",
+  "theme_color": "#0b0e11",
+  "lang": "zh-CN",
+  "icons": [
+    { "src": "icons/icon-180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
