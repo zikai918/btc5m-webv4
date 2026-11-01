@@ -1,85 +1,111 @@
-// Gate 5m 事件目标价：Netlify Function
-// 与桌面端一致：事件列表 -> 当前 eventId -> 指定事件页 -> price_to_beat
-// 失败时返回 debug，方便定位是 Gate 直连、Jina、还是解析问题。
+// Gate 5m 事件目标价：Netlify Function（实时优先版）
+// 思路：直连 Gate 多域名抢最快结果；直连被拦时用 Jina 文本模式；
+// 边界期次切换时自动重试，确保新一期一开始就能拿到目标价。
 
-const GATE_API =
-  "https://www.gatewebsite.com/apiw/v2/market_futures/contract_events/list?version=20260918&market_type=all&sub_website_id=0";
+const GATE_HOSTS = [
+  "https://www.gate.io",
+  "https://www.gate.com",
+  "https://www.gatewebsite.com"
+];
 const GATE_PAGE = "https://www.gatewebsite.com/zh/trade-events/btc-updown-5m";
+const GATE_LIST = "/apiw/v2/market_futures/contract_events/list?version=20260918&market_type=all&sub_website_id=0";
 const JINA = "https://r.jina.ai/";
-const UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
-
+const BAR = 300;
+const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 const HEADERS = {
   "User-Agent": UA,
-  "Accept": "application/json, text/plain, */*",
+  "Accept": "application/json,text/html;q=0.9,*/*;q=0.8",
   "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-  "Referer": GATE_PAGE,
-  "Origin": "https://www.gatewebsite.com",
-  "Sec-Fetch-Dest": "empty",
-  "Sec-Fetch-Mode": "cors",
-  "Sec-Fetch-Site": "same-origin"
+  "Referer": "https://www.gate.com/zh/trade-events/btc-updown-5m"
 };
 
-const JINA_TEXT_HEADERS = {
-  "User-Agent": UA,
-  "Accept": "text/plain",
-  "X-No-Cache": "true"
-};
-
-const JINA_HTML_HEADERS = {
-  "User-Agent": UA,
-  "Accept": "text/html",
-  "X-Return-Format": "html",
-  "X-No-Cache": "true"
-};
-
-const CORS = {
-  "Access-Control-Allow-Origin": "*",
-  "Content-Type": "application/json; charset=utf-8",
-  "Cache-Control": "no-store"
-};
-
-function out(statusCode, obj) {
-  return { statusCode, headers: CORS, body: JSON.stringify(obj) };
+function cors() {
+  return {
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET,OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Cache-Control": "no-store, max-age=0",
+    "Content-Type": "application/json; charset=utf-8"
+  };
 }
 
-function snip(s) {
-  return (s || "").replace(/\s+/g, " ").slice(0, 240);
+function out(status, body) {
+  return { statusCode: status, headers: cors(), body: JSON.stringify(body) };
 }
 
-async function fetchText(url, headers, maxMs, deadline) {
-  const left = Math.max(0, deadline - Date.now());
-  const timeout = Math.min(maxMs || 8000, left);
-  if (timeout < 600) return { ok: false, status: 0, text: "", type: "", error: "deadline" };
+function snip(t) {
+  return (t || "").slice(0, 420);
+}
 
+function sleep(ms) {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+async function fetchText(url, headers, timeoutMs, deadline) {
+  const left = deadline - Date.now();
+  if (left < 400) return { ok: false, status: 0, type: "", text: "", error: "deadline" };
+  const ms = Math.max(800, Math.min(timeoutMs, left));
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeout);
+  const timer = setTimeout(() => ctrl.abort(), ms);
   try {
-    const res = await fetch(url, { headers, signal: ctrl.signal, redirect: "follow" });
+    const res = await fetch(url + (url.indexOf("?") >= 0 ? "&" : "?") + "_ts=" + Date.now(), {
+      headers: Object.assign({}, headers, { "Cache-Control": "no-cache" }),
+      signal: ctrl.signal,
+      redirect: "follow"
+    });
+    const text = await res.text();
     return {
       ok: res.ok,
       status: res.status,
-      text: await res.text(),
-      type: res.headers.get("content-type") || ""
+      type: res.headers.get("content-type") || "",
+      text,
+      error: ""
     };
   } catch (e) {
-    return { ok: false, status: 0, text: "", type: "", error: String(e) };
+    return {
+      ok: false,
+      status: 0,
+      type: "",
+      text: "",
+      error: String(e && e.name ? e.name + ": " + e.message : e)
+    };
   } finally {
     clearTimeout(timer);
   }
 }
 
-function jina(url, headers, deadline, maxMs) {
+async function jinaText(url, deadline, timeoutMs) {
+  const left = deadline - Date.now();
+  if (left < 500) return { ok: false, status: 0, type: "", text: "", error: "deadline" };
+  const ms = Math.max(1000, Math.min(timeoutMs, left));
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
   const bust = (url.indexOf("?") >= 0 ? "&" : "?") + "_ts=" + Date.now();
-  return fetchText(JINA + url + bust, headers, maxMs || 12000, deadline);
-}
-
-function jinaText(url, deadline, maxMs) {
-  return jina(url, JINA_TEXT_HEADERS, deadline, maxMs);
-}
-
-function jinaHtml(url, deadline, maxMs) {
-  return jina(url, JINA_HTML_HEADERS, deadline, maxMs);
+  try {
+    const res = await fetch(JINA + url + bust, {
+      headers: { "X-No-Cache": "true", "Accept": "text/plain", "User-Agent": UA },
+      signal: ctrl.signal,
+      cache: "no-store"
+    });
+    const text = await res.text();
+    return {
+      ok: res.ok,
+      status: res.status,
+      type: res.headers.get("content-type") || "",
+      text,
+      error: ""
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      status: 0,
+      type: "",
+      text: "",
+      error: String(e && e.name ? e.name + ": " + e.message : e)
+    };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function parseJsonLoose(text) {
@@ -93,50 +119,33 @@ function parseJsonLoose(text) {
   return null;
 }
 
-function parsePrice(text) {
-  if (!text) return null;
-  let m = text.match(/price_to_beat\\?"\s*:\s*\\?"?([0-9]+(?:\.[0-9]+)?)/);
-  if (!m) m = text.match(/目标价格[^\d]{0,40}([0-9,]+(?:\.[0-9]+)?)/);
-  if (!m) m = text.match(/Target\s+([0-9,]+(?:\.[0-9]+)?)/i);
-  if (!m) return null;
-  const v = Number(m[1].replace(/,/g, ""));
-  return isFinite(v) && v > 0 ? v : null;
-}
-
-function parseQuestionEnd(text) {
-  const m = text.match(/BTC\s*5分钟涨或跌\s*(\d{1,2}:\d{2})/);
-  if (!m) return null;
-  return m[1].length === 4 ? "0" + m[1] : m[1];
-}
-
-function expectedEndHHMM(startSec) {
-  const d = new Date((startSec + 300) * 1000 + 8 * 3600 * 1000);
-  return (
-    String(d.getUTCHours()).padStart(2, "0") + ":" + String(d.getUTCMinutes()).padStart(2, "0")
-  );
-}
-
-function pickEvent(data, now) {
+function pickEvent(data, nowSec) {
   const list = data && data.data && data.data.list;
   if (!Array.isArray(list)) return null;
   for (const e of list) {
-    if (
-      e &&
-      e.slug === "btc-updown-5m" &&
-      Number(e.start_date) <= now &&
-      Number(e.end_date) > now
-    ) {
-      return { id: String(e.id), start: Number(e.start_date), end: Number(e.end_date) };
+    if (e && e.slug === "btc-updown-5m" &&
+        Number(e.start_date) <= nowSec && Number(e.end_date) > nowSec) {
+      return {
+        id: String(e.id),
+        start: Number(e.start_date),
+        end: Number(e.end_date)
+      };
     }
   }
   return null;
 }
 
-function eventUrl(id) {
-  return GATE_PAGE + "?eventId=" + encodeURIComponent(id) + "&outcome=Down";
+function parsePrice(text) {
+  if (!text) return null;
+  let m = text.match(/price_to_beat\\?"\s*:\s*\\?"?([0-9.]+)/);
+  if (!m) m = text.match(/目标价格[^\d]{0,40}([0-9,]+\.\d+)/);
+  if (!m) m = text.match(/Target\s+([0-9,]+\.\d+)/i);
+  if (!m) return null;
+  const v = Number(m[1].replace(/,/g, ""));
+  return isFinite(v) && v > 0 ? v : null;
 }
 
-// Jina 文本模式会返回 "Final URL: `...eventId=xxx...`"，用它校验是不是当前期
+// Jina 文本会返回 "Final URL: `...eventId=xxx...`"
 function parseEventIdFromText(text) {
   if (!text) return null;
   let m = text.match(/Final URL:\s*`[^`]*eventId=(\d+)/i);
@@ -145,83 +154,220 @@ function parseEventIdFromText(text) {
   return m ? m[1] : null;
 }
 
+function normTime(t) {
+  const m = (t || "").match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return null;
+  // 5m 期次时间一定是 5 分钟对齐，排除倒计时之类的误匹配
+  if (Number(m[2]) % 5 !== 0) return null;
+  return String(m[1]).padStart(2, "0") + ":" + m[2];
+}
+
+// 从页面文本里解析期次结束时间（UTC+8）
+function parsePageEnd(text) {
+  if (!text) return null;
+  let m = text.match(/BTC\s*5\s*(?:分钟|Min)[^\d]{0,20}(\d{1,2}:\d{2})/i);
+  if (m) return normTime(m[1]);
+  m = text.match(/(\d{1,2}:\d{2})\s*[-–—~至]\s*(\d{1,2}:\d{2})/);
+  if (m) return normTime(m[2]);
+  m = text.match(/(\d{1,2}:\d{2})\s*[（(]?UTC\+8/i);
+  if (m) return normTime(m[1]);
+  return null;
+}
+
+function expectedEndHHMM(curStart) {
+  const d = new Date((curStart + BAR) * 1000);
+  const h = String((d.getUTCHours() + 8) % 24).padStart(2, "0");
+  const m = String(d.getUTCMinutes()).padStart(2, "0");
+  return h + ":" + m;
+}
+
+function eventUrlOn(host, id) {
+  return host + "/zh/trade-events/btc-updown-5m?eventId=" + encodeURIComponent(id) + "&outcome=Down";
+}
+
 exports.handler = async () => {
   const now = Math.floor(Date.now() / 1000);
-  const curStart = now - (now % 300);
-  const curEnd = curStart + 300;
+  const curStart = now - (now % BAR);
+  const curEnd = curStart + BAR;
   const expected = expectedEndHHMM(curStart);
-  const deadline = Date.now() + 25000;
+  const deadline = Date.now() + 24000;
   const debug = { now, curStart, expected };
 
-  // 1) 直连事件列表 + 指定事件页
+  // 1) 直连 Gate 多域名并发，哪个先通用哪个
+  let directEvent = null;
   try {
-    const lr = await fetchText(GATE_API, HEADERS, 4000, deadline);
-    debug.directList = { ok: lr.ok, status: lr.status, type: lr.type, text: snip(lr.text), error: lr.error };
-    const ev = lr.ok ? pickEvent(parseJsonLoose(lr.text), now) : null;
-    debug.directEvent = ev;
-    if (ev) {
-      const dr = await fetchText(eventUrl(ev.id), HEADERS, 4000, deadline);
-      debug.directDetail = { ok: dr.ok, status: dr.status, type: dr.type, text: snip(dr.text), error: dr.error };
-      const price = dr.ok ? parsePrice(dr.text) : null;
-      if (price) return out(200, { price, start: ev.start, end: ev.end, source: "gate" });
+    const rs = await Promise.all(
+      GATE_HOSTS.map((h) => fetchText(h + GATE_LIST, HEADERS, 2500, deadline))
+    );
+    debug.directList = rs.map((r, i) => ({
+      host: GATE_HOSTS[i],
+      ok: r.ok,
+      status: r.status,
+      type: r.type,
+      text: snip(r.text),
+      error: r.error
+    }));
+
+    for (const r of rs) {
+      if (!r.ok) continue;
+      const ev = pickEvent(parseJsonLoose(r.text), now);
+      if (ev) { directEvent = ev; break; }
+    }
+    debug.directEvent = directEvent;
+
+    if (directEvent) {
+      const listPrice = parsePrice(JSON.stringify(directEvent));
+      if (listPrice) {
+        return out(200, {
+          price: listPrice,
+          start: directEvent.start,
+          end: directEvent.end,
+          source: "gate-list",
+          eventId: directEvent.id
+        });
+      }
+
+      const pages = await Promise.all(
+        GATE_HOSTS.map((h) => fetchText(eventUrlOn(h, directEvent.id), HEADERS, 2500, deadline))
+      );
+      debug.directDetail = pages.map((r, i) => ({
+        host: GATE_HOSTS[i],
+        ok: r.ok,
+        status: r.status,
+        type: r.type,
+        text: snip(r.text),
+        error: r.error
+      }));
+      for (const r of pages) {
+        if (!r.ok) continue;
+        const price = parsePrice(r.text);
+        if (price) {
+          return out(200, {
+            price,
+            start: directEvent.start,
+            end: directEvent.end,
+            source: "gate",
+            eventId: directEvent.id
+          });
+        }
+      }
     }
   } catch (e) {
     debug.directError = String(e);
   }
 
-  // 2) Jina 事件列表（文本模式）
-  let listEvent = null;
-  try {
-    const lr = await jinaText(GATE_API, deadline, 10000);
-    debug.jinaList = { ok: lr.ok, status: lr.status, type: lr.type, text: snip(lr.text), error: lr.error };
-    listEvent = lr.ok ? pickEvent(parseJsonLoose(lr.text), now) : null;
-    debug.jinaEvent = listEvent;
-  } catch (e) {
-    debug.jinaError = String(e);
-  }
-
-  if (!listEvent) {
-    return out(502, { error: "target unavailable", debug });
-  }
-
-  // 3) Jina 通用事件页文本：会自动跳到当前期，用 Final URL 的 eventId 校验
-  try {
-    const gr = await jinaText(GATE_PAGE, deadline, 12000);
-    debug.jinaGenericText = { ok: gr.ok, status: gr.status, type: gr.type, text: snip(gr.text), error: gr.error };
-    const price = gr.ok ? parsePrice(gr.text) : null;
-    const idFromText = gr.ok ? parseEventIdFromText(gr.text) : null;
-    const qEnd = gr.ok ? parseQuestionEnd(gr.text) : null;
-    debug.jinaGenericParse = {
-      price,
-      idFromText,
-      qEnd,
-      expected,
-      expectedId: listEvent.id
+  // 2) Jina 通用事件页文本，最多两次；边界期次切换时重试
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const gr = await jinaText(GATE_PAGE, deadline, attempt === 0 ? 10000 : 9000);
+    debug["jinaGeneric" + attempt] = {
+      ok: gr.ok,
+      status: gr.status,
+      type: gr.type,
+      text: snip(gr.text),
+      error: gr.error
     };
-    if (price && idFromText === listEvent.id) {
-      return out(200, {
+
+    if (gr.ok) {
+      const price = parsePrice(gr.text);
+      const id = parseEventIdFromText(gr.text);
+      const endStr = parsePageEnd(gr.text);
+      const live = /进行中|Live|交易中/i.test(gr.text);
+      const ended = /已结束|Ended/i.test(gr.text);
+      const timeOk = endStr === expected;
+      const idOk = !!(directEvent && id && id === directEvent.id);
+
+      debug["jinaGenericParse" + attempt] = {
         price,
-        start: listEvent.start,
-        end: listEvent.end,
-        source: "jina-generic"
-      });
+        id,
+        endStr,
+        expected,
+        directId: directEvent ? directEvent.id : null,
+        timeOk,
+        idOk,
+        live,
+        ended
+      };
+
+      // 页面期次时间必须是当前期；页面还没切到新一期就重试
+      if (price && !ended) {
+        if (timeOk) {
+          return out(200, {
+            price,
+            start: curStart,
+            end: curEnd,
+            source: "jina-generic",
+            eventId: id || null
+          });
+        }
+        if (idOk) {
+          return out(200, {
+            price,
+            start: directEvent.start,
+            end: directEvent.end,
+            source: "jina-generic",
+            eventId: id
+          });
+        }
+        // 既没解析到期次时间，也没有事件 ID 可比对时，才用“进行中”兜底
+        if (!endStr && !directEvent && live) {
+          return out(200, {
+            price,
+            start: curStart,
+            end: curEnd,
+            source: "jina-generic",
+            eventId: id || null
+          });
+        }
+      }
     }
-  } catch (e) {
-    debug.jinaGenericError = String(e);
+
+    if (Date.now() + 1500 >= deadline) break;
+    await sleep(1200);
   }
 
-  // 4) 再试指定事件页文本
-  try {
-    const tr = await jinaText(eventUrl(listEvent.id), deadline, 12000);
-    debug.jinaDetailText = { ok: tr.ok, status: tr.status, type: tr.type, text: snip(tr.text), error: tr.error };
-    const price = tr.ok ? parsePrice(tr.text) : null;
-    const idFromText = tr.ok ? parseEventIdFromText(tr.text) : null;
-    debug.jinaDetailParse = { price, idFromText };
-    if (price) {
-      return out(200, { price, start: listEvent.start, end: listEvent.end, source: "jina" });
+  // 3) Jina 事件列表 + 指定事件页
+  let listEvent = directEvent;
+  if (!listEvent) {
+    try {
+      const lr = await jinaText(GATE_HOSTS[2] + GATE_LIST, deadline, 8000);
+      debug.jinaList = {
+        ok: lr.ok,
+        status: lr.status,
+        type: lr.type,
+        text: snip(lr.text),
+        error: lr.error
+      };
+      listEvent = lr.ok ? pickEvent(parseJsonLoose(lr.text), now) : null;
+      debug.jinaEvent = listEvent;
+    } catch (e) {
+      debug.jinaListError = String(e);
     }
-  } catch (e) {
-    debug.jinaDetailError = String(e);
+  }
+
+  if (listEvent) {
+    try {
+      const tr = await jinaText(eventUrlOn(GATE_HOSTS[2], listEvent.id), deadline, 9000);
+      debug.jinaDetail = {
+        ok: tr.ok,
+        status: tr.status,
+        type: tr.type,
+        text: snip(tr.text),
+        error: tr.error
+      };
+      const price = tr.ok ? parsePrice(tr.text) : null;
+      const id = tr.ok ? parseEventIdFromText(tr.text) : null;
+      if (price) {
+        return out(200, {
+          price,
+          start: listEvent.start,
+          end: listEvent.end,
+          source: "jina-detail",
+          eventId: id || listEvent.id
+        });
+      }
+    } catch (e) {
+      debug.jinaDetailError = String(e);
+    }
   }
 
   return out(502, { error: "target unavailable", debug });
