@@ -1,3 +1,4 @@
+// V6 (2026-11-03) - 与线上部署版一致; 目标事件: https://www.gatewebsite.com/zh/trade-events/btc-updown-5m
 // Gate 5m 事件目标价：Cloudflare Pages Function（实时优先版）
 // 路由：/api/target（文件位于 functions/api/target.js）
 // 思路：直连 Gate 多域名抢最快结果；直连被拦时用 Jina 文本模式；
